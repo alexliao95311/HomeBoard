@@ -14,3 +14,6 @@ frontend/vite.config.d.ts
 
 uploads/
 *.db
+
+# Google service-account credentials
+secrets/*.json

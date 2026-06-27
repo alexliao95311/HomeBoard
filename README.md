@@ -420,8 +420,7 @@ Future export formats:
 - OpenPyXL for Excel parsing
 - PyMuPDF or pdfplumber for PDF parsing
 - python-docx for DOCX parsing
-- Local file storage for MVP
-- Future S3-compatible storage such as AWS S3, Cloudflare R2, or MinIO
+- Firebase Cloud Storage for private document storage
 
 ---
 
@@ -492,7 +491,7 @@ Services:
 - React frontend
 - PostgreSQL
 - Redis
-- MinIO for local S3-compatible storage
+- Firebase Cloud Storage for managed object storage
 
 ---
 
@@ -563,7 +562,7 @@ hoa-ai-assistant/
     demo-data/
 
   README.md
-  .env.example
+  .env                        # local configuration (not committed)
   .gitignore
 ```
 
@@ -594,7 +593,7 @@ Future production protections:
 - Multi-factor authentication
 - Encrypted file storage
 - Encrypted database backups
-- S3 private buckets with signed URLs
+- Private Firebase Storage buckets with controlled download URLs
 - Rate limiting
 - Deployment behind HTTPS
 - Separate development and production environments
@@ -672,7 +671,7 @@ The app should follow these rules:
 
 - Admin audit log page
 - Stronger role permissions
-- S3/MinIO document storage
+- Firebase Cloud Storage integration
 - MFA
 - Rate limiting
 - Deployment configuration
@@ -708,7 +707,9 @@ Recommended order:
 
 ## Current Status
 
-Project is currently in initial planning/scaffolding stage.
+The project foundation, health checks, Docker development stack, and Firebase
+Google authentication flow are scaffolded. The frontend signs in with Google
+and the FastAPI backend verifies the resulting Firebase ID token.
 
 No production use yet.
 
@@ -742,7 +743,69 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. FastAPI documentation is available at
-`http://localhost:8000/docs`.
+`http://localhost:8000/docs`. The homepage automatically calls
+`http://localhost:8000/health` and displays the backend status.
+
+### Docker Compose
+
+Configure the repository-root `.env` file, then start the complete local stack:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml up --build
+```
+
+Local services:
+
+| Service | Address |
+|---|---|
+| Frontend | `http://localhost:5173` |
+| Backend | `http://localhost:8000` |
+| PostgreSQL | `localhost:5432` |
+| Redis | `localhost:6379` |
+
+#### Firebase Google authentication setup
+
+1. Create or select a project in the Firebase console.
+2. Open **Build → Authentication → Sign-in method**.
+3. Add and enable the **Google** provider, select a support email, and save.
+4. Under **Authentication → Settings → Authorized domains**, ensure
+   `localhost` is present. Add the production domain before deployment.
+5. Open **Project settings → Service accounts**, select **Generate new private
+   key**, and download the JSON credentials.
+6. Save the file as `secrets/firebase-service-account.json`. This path is
+   ignored by Git and mounted read-only into the backend container.
+7. Restart the frontend and backend after changing Firebase configuration.
+
+Google authentication does not require Cloud Storage to be enabled. The React
+app sends its Firebase ID token as a bearer token to
+`GET /api/v1/auth/me`; FastAPI verifies the token before returning the user
+profile.
+
+#### Firebase Storage setup (later document phase)
+
+1. Upgrade the project to the Blaze plan if prompted. Cloud Storage for
+   Firebase requires billing to be enabled.
+2. Open **Build → Storage**, select **Get started**, choose a permanent bucket
+   location, and keep the bucket in locked mode.
+3. Copy the bucket name from the Storage **Files** tab into
+   `FIREBASE_STORAGE_BUCKET` in `.env`. Use only the bucket name, without
+   `gs://`.
+4. Restart the backend after changing the bucket.
+
+The Firebase Admin SDK runs as a privileged server credential. Document
+authorization and organization isolation must therefore be enforced by the
+backend before each storage operation. Do not expose the service-account JSON
+or Admin SDK credentials to the frontend.
+
+Stop the stack with:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml down
+```
+
+Named Docker volumes preserve local PostgreSQL, Redis, and frontend
+dependency data between restarts. Add `--volumes` to the `down` command only
+when you intentionally want to delete that local data.
 
 ---
 

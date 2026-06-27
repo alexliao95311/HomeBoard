@@ -1,6 +1,9 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.34,<1.0
 pydantic>=2.10,<3.0
+sqlalchemy>=2.0,<3.0
+psycopg[binary]>=3.2,<4.0
+firebase-admin>=7.0,<8.0
 
 # Development and testing
 httpx>=0.28,<1.0
