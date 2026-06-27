@@ -772,8 +772,10 @@ Local services:
    `localhost` is present. Add the production domain before deployment.
 5. Open **Project settings → Service accounts**, select **Generate new private
    key**, and download the JSON credentials.
-6. Save the file as `secrets/firebase-service-account.json`. This path is
-   ignored by Git and mounted read-only into the backend container.
+6. Save the JSON file in `secrets/`. Set `GOOGLE_APPLICATION_CREDENTIALS` in
+   `.env` to `/run/secrets/<your-service-account-filename>.json`. JSON files in
+   this directory are ignored by Git and mounted read-only into the backend
+   container.
 7. Restart the frontend and backend after changing Firebase configuration.
 
 Google authentication does not require Cloud Storage to be enabled. The React
