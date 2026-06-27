@@ -714,6 +714,38 @@ No production use yet.
 
 ---
 
+## Local Development
+
+Start the backend on its default port, `8000`:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app
+```
+
+Confirm the backend is running at `http://localhost:8000/health`. It should
+return:
+
+```json
+{"status": "ok"}
+```
+
+In a second terminal, start the frontend on port `5173`:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. FastAPI documentation is available at
+`http://localhost:8000/docs`.
+
+---
+
 ## Disclaimer
 
 This application is intended to help HOA boards organize information, identify issues, and prepare draft reports. It does not provide legal, accounting, tax, financial, or professional management advice. All AI-generated outputs should be reviewed by qualified humans before board action.

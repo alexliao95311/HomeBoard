@@ -79,7 +79,7 @@ function App() {
             </a>
             <a
               className="button button--secondary"
-              href="http://localhost:5000/docs"
+              href="http://localhost:8000/docs"
             >
               View API docs
             </a>
