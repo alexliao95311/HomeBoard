@@ -18,6 +18,9 @@ class Settings:
         "DATABASE_URL",
         "postgresql+psycopg://hoa:hoa_dev_password@localhost:5432/hoa",
     )
+    document_storage_path: str = os.getenv(
+        "DOCUMENT_STORAGE_PATH", "storage/uploads"
+    )
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     firebase_project_id: str = os.getenv("FIREBASE_PROJECT_ID", "")
     firebase_storage_bucket: str = os.getenv(

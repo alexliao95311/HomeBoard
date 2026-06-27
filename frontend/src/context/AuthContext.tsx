@@ -1,6 +1,7 @@
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -22,6 +23,7 @@ interface AuthContextValue {
   error: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  getIdToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -61,23 +63,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  async function signInWithGoogle() {
+  const signInWithGoogle = useCallback(async () => {
     setError(null);
     try {
       await signInWithPopup(firebaseAuth, googleAuthProvider);
     } catch (authError) {
       setError(errorMessage(authError));
     }
-  }
+  }, []);
 
-  async function signOut() {
+  const signOut = useCallback(async () => {
     setError(null);
     await firebaseSignOut(firebaseAuth);
-  }
+  }, []);
+
+  const getIdToken = useCallback(async () => {
+    const firebaseUser = firebaseAuth.currentUser;
+    if (!firebaseUser) {
+      throw new Error("Sign in to continue");
+    }
+    return firebaseUser.getIdToken();
+  }, []);
 
   const value = useMemo(
-    () => ({ user, loading, error, signInWithGoogle, signOut }),
-    [user, loading, error],
+    () => ({
+      user,
+      loading,
+      error,
+      signInWithGoogle,
+      signOut,
+      getIdToken,
+    }),
+    [user, loading, error, signInWithGoogle, signOut, getIdToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

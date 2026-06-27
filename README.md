@@ -710,6 +710,8 @@ Recommended order:
 The project foundation, health checks, Docker development stack, and Firebase
 Google authentication flow are scaffolded. The frontend signs in with Google
 and the FastAPI backend verifies the resulting Firebase ID token.
+Authenticated document upload and organization-scoped document metadata are
+also available. Text extraction is not implemented yet.
 
 No production use yet.
 
@@ -745,6 +747,10 @@ npm run dev
 Open `http://localhost:5173`. FastAPI documentation is available at
 `http://localhost:8000/docs`. The homepage automatically calls
 `http://localhost:8000/health` and displays the backend status.
+
+After signing in with Google, open `http://localhost:5173/documents` to upload
+PDF, CSV, DOCX, or XLSX files and view the current organization's document
+list. The dashboard includes a direct link to this workspace.
 
 ### Docker Compose
 
@@ -782,6 +788,32 @@ Google authentication does not require Cloud Storage to be enabled. The React
 app sends its Firebase ID token as a bearer token to
 `GET /api/v1/auth/me`; FastAPI verifies the token before returning the user
 profile.
+
+#### Document API
+
+All document endpoints require a Firebase ID token in the
+`Authorization: Bearer <token>` header.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/documents/upload` | Upload a document and create its metadata |
+| `GET` | `/documents` | List documents in the current organization |
+| `GET` | `/documents/{id}` | Get organization-scoped document metadata |
+
+The versioned `/api/v1/documents` equivalents are also available. Uploads use
+`multipart/form-data` with a `file` field and a user-provided `document_type`
+field such as `contract`, `bank_statement`, `budget`, or `invoice`.
+
+Accepted content types are PDF, CSV, DOCX, and XLSX, with a 25 MB maximum.
+Files are stored under
+`backend/storage/uploads/{organization_id}/{document_id}_{safe_filename}`.
+The backend computes a SHA-256 hash, creates the `Document` row with status
+`uploaded`, and records a `document.uploaded` audit event in the same database
+transaction. No document text is processed yet.
+
+For the MVP, a user's first document request provisions a private default
+organization and an admin membership. Explicit organization creation,
+invitations, and organization switching will be added later.
 
 #### Firebase Storage setup (later document phase)
 

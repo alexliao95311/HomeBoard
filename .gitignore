@@ -13,6 +13,7 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 
 uploads/
+backend/storage/uploads/
 *.db
 
 # Google service-account credentials
