@@ -1,6 +1,5 @@
 import { type FormEvent, Fragment, useCallback, useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link } from "react-router-dom";
 
 import {
@@ -258,11 +257,7 @@ function ReviewPanel({
             rows={8}
           />
         ) : (
-          <div className="prose">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {review.executive_summary}
-            </ReactMarkdown>
-          </div>
+          <SafeMarkdown className="prose">{review.executive_summary}</SafeMarkdown>
         )}
       </section>
 
@@ -277,11 +272,7 @@ function ReviewPanel({
           />
         ) : (
           <div className="review-recommendation">
-            <div className="prose prose--recommendation">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {review.recommendation}
-              </ReactMarkdown>
-            </div>
+            <SafeMarkdown className="prose prose--recommendation">{review.recommendation}</SafeMarkdown>
           </div>
         )}
       </section>

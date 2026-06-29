@@ -15,6 +15,8 @@ _SYSTEM_PROMPT = (
     "Do not invent facts: only draw conclusions from what the contract text explicitly states. "
     "When completing citation fields, quote the exact sentence or closest phrase from the "
     "contract; set citation to null only if the contract is silent on that point. "
+    "When writing monetary amounts, never use the $ symbol — write the number only "
+    "(e.g. write '3,550' not '$3,550'). "
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."

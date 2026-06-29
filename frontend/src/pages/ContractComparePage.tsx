@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { compareContracts, getComparison, listContracts } from "../api/client";
@@ -90,9 +89,7 @@ function AiAnalysisSection({
         <span className="review-model-badge">{result.ai_model}</span>
       </div>
 
-      <div className="compare-ai__summary prose prose--lg">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.ai_summary}</ReactMarkdown>
-      </div>
+      <SafeMarkdown className="compare-ai__summary prose prose--lg">{result.ai_summary}</SafeMarkdown>
 
       {result.ai_critical_differences.length > 0 && (
         <div className="compare-ai__block">

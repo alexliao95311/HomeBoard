@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { getContract, getContractReview } from "../api/client";
@@ -68,11 +67,7 @@ function RubricTable({ scores }: { scores: ContractRubricScore[] }) {
 }
 
 function Prose({ children, className }: { children: string; className?: string }) {
-  return (
-    <div className={`prose ${className ?? ""}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
-    </div>
-  );
+  return <SafeMarkdown className={`prose ${className ?? ""}`.trim()}>{children}</SafeMarkdown>;
 }
 
 function RiskFlags({ flags }: { flags: ContractRiskFlag[] }) {

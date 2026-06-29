@@ -13,6 +13,8 @@ _SYSTEM_PROMPT = (
     "You are NOT a lawyer and this is NOT legal advice. "
     "Base your comparison strictly on the contract texts and rubric scores provided. "
     "Do not invent facts. "
+    "When writing monetary amounts, never use the $ symbol — write the number only "
+    "(e.g. write '3,550' not '$3,550'). "
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."
