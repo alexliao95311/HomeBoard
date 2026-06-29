@@ -34,3 +34,7 @@ class DocumentProcessResponse(BaseModel):
     document_id: uuid.UUID
     status: str
     chunk_count: int
+
+
+class DocumentUpdateRequest(BaseModel):
+    original_filename: str

@@ -286,6 +286,30 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
   `ContractReviewPage.tsx`.
 - [x] All 11 contract tests pass.
 
+### 18. Contract Comparison
+
+- [x] Added `app/ai/agents/contract_comparator.py` — reads all selected
+  contract texts (up to 7 k chars each) plus rubric scores, calls the AI with
+  a single prompt, and returns `summary` (board-ready markdown), `per_contract`
+  (per-vendor strengths / weaknesses / verdict), and `critical_differences`.
+  Falls back to a deterministic fake when `USE_FAKE_AI=true`.
+- [x] Added `POST /api/v1/contracts/compare` — accepts 2–5 contract UUIDs,
+  verifies org ownership, loads latest reviews + rubric scores + document text
+  chunks for each contract, calls the AI comparator, then also computes
+  code-based rankings and a side-by-side rubric table.
+- [x] Response fields: `ai_summary`, `ai_model`, `ai_per_contract`,
+  `ai_critical_differences` (AI-generated), plus `ranked_contracts`,
+  `side_by_side_table`, `best_overall`, `lowest_risk`, `best_value`,
+  `key_differences` (code-generated from rubric scores).
+- [x] Added dedicated `/contracts/compare` page (`ContractComparePage.tsx`)
+  with a card-based selection UI (checkbox cards, 2–5 contracts, max-5 guard),
+  an AI analysis block at the top (summary prose + critical differences +
+  per-contract verdict cards), followed by callout cards, rankings, and
+  side-by-side rubric table.
+- [x] `ContractsPage` simplified: checkboxes and inline `ComparePanel` removed;
+  a "Compare contracts →" link appears in the list header when 2+ reviews exist.
+- [x] All 11 existing backend contract tests pass.
+
 ## Next Work
 
 1. Decide when to move document binaries from local storage to Firebase Cloud

@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.orm import Session
 
+from app.ai.agents.contract_comparator import (
+    ContractComparisonError,
+    run_ai_comparison,
+    run_fake_comparison,
+)
 from app.ai.agents.contract_reviewer import (
     ContractReviewError,
     ContractReviewResult,
@@ -16,6 +21,7 @@ from app.ai.providers.openrouter_provider import OpenRouterProvider
 from app.config import settings
 from app.database import get_database_session
 from app.models.contract import Contract
+from app.models.contract_comparison import ContractComparison
 from app.models.contract_review import (
     ContractReview,
     ContractRiskFlag,
@@ -24,6 +30,10 @@ from app.models.contract_review import (
 from app.models.document import Document
 from app.models.document_text_chunk import DocumentTextChunk
 from app.schemas.contract import (
+    AiPerContractNote,
+    ContractCompareRequest,
+    ContractCompareResponse,
+    ContractComparisonListItem,
     ContractResponse,
     ContractReviewRequest,
     ContractReviewResponse,
@@ -32,6 +42,8 @@ from app.schemas.contract import (
     ContractRubricScoreResponse,
     ContractUpdateRequest,
     ContractWithReviewResponse,
+    RankedContract,
+    SideBySideRow,
 )
 from app.services.organization_service import (
     OrganizationContext,
@@ -224,6 +236,271 @@ def create_contract_review(
         contract=ContractResponse.model_validate(contract, from_attributes=True),
         review=_build_review_response(review, rubric_scores, risk_flags),
     )
+
+
+@router.post("/compare", response_model=ContractCompareResponse)
+def compare_contracts(
+    request: ContractCompareRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ContractCompareResponse:
+    RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+    RISK_PENALTY = {"low": 1.0, "medium": 0.85, "high": 0.70}
+
+    contracts = [
+        _get_org_contract(session, cid, organization.organization_id)
+        for cid in request.contract_ids
+    ]
+
+    reviews: dict[str, ContractReview] = {}
+    rubric_map: dict[str, list[ContractRubricScore]] = {}
+    for c in contracts:
+        review = session.scalar(
+            select(ContractReview)
+            .where(ContractReview.contract_id == c.id)
+            .order_by(ContractReview.created_at.desc())
+        )
+        if review is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Contract {c.id} ({c.vendor_name or 'unknown vendor'}) has no review yet.",
+            )
+        reviews[str(c.id)] = review
+        rubric_map[str(c.id)] = list(
+            session.scalars(
+                select(ContractRubricScore).where(
+                    ContractRubricScore.contract_review_id == review.id
+                )
+            )
+        )
+
+    # Load contract text chunks for the AI
+    text_map: dict[str, str] = {}
+    for c in contracts:
+        chunks = list(
+            session.scalars(
+                select(DocumentTextChunk)
+                .where(DocumentTextChunk.document_id == c.document_id)
+                .order_by(DocumentTextChunk.chunk_index)
+            )
+        )
+        text_map[str(c.id)] = "\n\n".join(ch.text for ch in chunks)
+
+    # Build AI input
+    contracts_info = [
+        {
+            "contract_id": str(c.id),
+            "vendor_name": c.vendor_name,
+            "contract_type": c.contract_type,
+            "total_score": float(reviews[str(c.id)].total_score),
+            "risk_level": reviews[str(c.id)].risk_level,
+            "rubric_rows": [
+                {"category": s.category, "score": float(s.score), "max_score": float(s.max_score)}
+                for s in rubric_map[str(c.id)]
+            ],
+            "contract_text": text_map[str(c.id)],
+        }
+        for c in contracts
+    ]
+
+    if settings.use_fake_ai:
+        ai_result = run_fake_comparison(contracts_info)
+        ai_model = "placeholder"
+    else:
+        if not settings.openrouter_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OPENROUTER_API_KEY is not configured. Set USE_FAKE_AI=true or add the key.",
+            )
+        try:
+            ai_result = run_ai_comparison(
+                contracts_info,
+                provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+                model=settings.default_model,
+            )
+        except ContractComparisonError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AI comparison failed: {exc}",
+            ) from exc
+        ai_model = settings.default_model
+
+    # Code-based ranking
+    sorted_contracts = sorted(
+        contracts,
+        key=lambda c: (
+            -float(reviews[str(c.id)].total_score),
+            RISK_ORDER.get(reviews[str(c.id)].risk_level, 1),
+        ),
+    )
+
+    ranked = [
+        RankedContract(
+            rank=i + 1,
+            contract_id=c.id,
+            vendor_name=c.vendor_name,
+            contract_type=c.contract_type,
+            total_score=reviews[str(c.id)].total_score,
+            risk_level=reviews[str(c.id)].risk_level,
+        )
+        for i, c in enumerate(sorted_contracts)
+    ]
+
+    # Side-by-side rubric table
+    seen_categories: dict[str, Decimal] = {}
+    for cid in [str(c.id) for c in contracts]:
+        for s in rubric_map[cid]:
+            seen_categories.setdefault(s.category, s.max_score)
+
+    side_by_side: list[SideBySideRow] = []
+    for category, max_score in seen_categories.items():
+        row_scores: dict[str, Decimal] = {}
+        for c in contracts:
+            cid = str(c.id)
+            row_scores[cid] = next(
+                (Decimal(str(s.score)) for s in rubric_map[cid] if s.category == category),
+                Decimal("0"),
+            )
+        side_by_side.append(SideBySideRow(category=category, scores=row_scores, max_score=max_score))
+
+    best_overall = sorted_contracts[0]
+    lowest_risk_contract = min(
+        contracts,
+        key=lambda c: (
+            RISK_ORDER.get(reviews[str(c.id)].risk_level, 1),
+            -float(reviews[str(c.id)].total_score),
+        ),
+    )
+    best_value_contract = max(
+        contracts,
+        key=lambda c: float(reviews[str(c.id)].total_score)
+        * RISK_PENALTY.get(reviews[str(c.id)].risk_level, 0.85),
+    )
+
+    def _spread(row: SideBySideRow) -> float:
+        vals = list(row.scores.values())
+        return float(max(vals)) - float(min(vals))
+
+    key_differences: list[str] = []
+    for row in sorted(side_by_side, key=_spread, reverse=True):
+        if len(key_differences) >= 3:
+            break
+        spread = _spread(row)
+        if spread == 0:
+            break
+        best_cid = max(row.scores, key=lambda k: row.scores[k])
+        best_vendor = next(
+            (c.vendor_name or "Unknown" for c in contracts if str(c.id) == best_cid), "Unknown"
+        )
+        key_differences.append(
+            f"{row.category}: {spread:.0f}-pt spread — {best_vendor} scores highest"
+        )
+
+    if not key_differences:
+        key_differences = ["Contracts have similar rubric scores across all categories."]
+
+    response = ContractCompareResponse(
+        comparison_id=uuid.uuid4(),  # placeholder, replaced after DB insert
+        ai_summary=ai_result.summary,
+        ai_model=ai_model,
+        ai_per_contract=[
+            AiPerContractNote(
+                contract_id=p.contract_id,
+                strengths=p.strengths,
+                weaknesses=p.weaknesses,
+                verdict=p.verdict,
+            )
+            for p in ai_result.per_contract
+        ],
+        ai_critical_differences=ai_result.critical_differences,
+        ranked_contracts=ranked,
+        side_by_side_table=side_by_side,
+        best_overall=str(best_overall.id),
+        lowest_risk=str(lowest_risk_contract.id),
+        best_value=str(best_value_contract.id),
+        key_differences=key_differences,
+    )
+
+    comparison = ContractComparison(
+        organization_id=organization.organization_id,
+        contract_ids=[str(c.id) for c in contracts],
+        vendor_names=[c.vendor_name or "Unknown" for c in contracts],
+        ai_model=ai_model,
+        best_overall_vendor=best_overall.vendor_name,
+        result_json=response.model_dump(mode="json"),
+    )
+    session.add(comparison)
+    session.commit()
+    session.refresh(comparison)
+
+    response.comparison_id = comparison.id
+    # patch stored json with real id
+    comparison.result_json["comparison_id"] = str(comparison.id)
+    session.commit()
+
+    return response
+
+
+@router.get("/comparisons", response_model=list[ContractComparisonListItem])
+def list_comparisons(
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> list[ContractComparisonListItem]:
+    rows = list(
+        session.scalars(
+            select(ContractComparison)
+            .where(ContractComparison.organization_id == organization.organization_id)
+            .order_by(ContractComparison.created_at.desc())
+        )
+    )
+    return [
+        ContractComparisonListItem(
+            id=row.id,
+            vendor_names=row.vendor_names,
+            ai_model=row.ai_model,
+            best_overall_vendor=row.best_overall_vendor,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/comparisons/{comparison_id}", response_model=ContractCompareResponse)
+def get_comparison(
+    comparison_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ContractCompareResponse:
+    row = session.scalar(
+        select(ContractComparison).where(
+            ContractComparison.id == comparison_id,
+            ContractComparison.organization_id == organization.organization_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comparison not found")
+    data = row.result_json
+    data["comparison_id"] = str(row.id)
+    return ContractCompareResponse.model_validate(data)
+
+
+@router.delete("/comparisons/{comparison_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_comparison(
+    comparison_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    row = session.scalar(
+        select(ContractComparison).where(
+            ContractComparison.id == comparison_id,
+            ContractComparison.organization_id == organization.organization_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comparison not found")
+    session.execute(sql_delete(ContractComparison).where(ContractComparison.id == comparison_id))
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("", response_model=list[ContractResponse])

@@ -1,5 +1,6 @@
 from app.models.audit_log import AuditLog
 from app.models.contract import Contract
+from app.models.contract_comparison import ContractComparison
 from app.models.contract_review import (
     ContractReview,
     ContractRiskFlag,
@@ -13,6 +14,7 @@ from app.models.user import User
 __all__ = [
     "AuditLog",
     "Contract",
+    "ContractComparison",
     "ContractReview",
     "ContractRiskFlag",
     "ContractRubricScore",

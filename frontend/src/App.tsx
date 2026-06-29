@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   Link,
   NavLink,
@@ -7,16 +7,14 @@ import {
   useLocation,
 } from "react-router-dom";
 
-import { getHealth } from "./api/client";
 import { useAuth } from "./context/AuthContext";
+import { ContractComparePage } from "./pages/ContractComparePage";
 import { ContractReviewPage } from "./pages/ContractReviewPage";
 import { ContractsPage } from "./pages/ContractsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
 import { PrivacySecurityPage } from "./pages/PrivacySecurityPage";
-
-type BackendStatus = "checking" | "ok" | "offline";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -29,8 +27,6 @@ function ScrollToTop() {
 }
 
 function App() {
-  const [backendStatus, setBackendStatus] =
-    useState<BackendStatus>("checking");
   const {
     user,
     loading: authLoading,
@@ -38,17 +34,6 @@ function App() {
     signInWithGoogle,
     signOut,
   } = useAuth();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    getHealth(controller.signal)
-      .then((health) => setBackendStatus(health.status))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setBackendStatus("offline");
-      });
-    return () => controller.abort();
-  }, []);
 
   return (
     <div className="app-shell">
@@ -68,10 +53,6 @@ function App() {
               <NavLink to="/contracts">Contracts</NavLink>
             </nav>
           ) : null}
-          <div className={`api-status api-status--${backendStatus}`}>
-            <span className="api-status__dot" />
-            Backend {backendStatus}
-          </div>
           {authLoading ? (
             <span className="auth-loading">Checking account…</span>
           ) : user ? (
@@ -119,6 +100,7 @@ function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:documentId" element={<DocumentTextPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
+        <Route path="/contracts/compare" element={<ContractComparePage />} />
         <Route path="/contracts/:contractId/review" element={<ContractReviewPage />} />
         <Route path="/privacy-security" element={<PrivacySecurityPage />} />
       </Routes>

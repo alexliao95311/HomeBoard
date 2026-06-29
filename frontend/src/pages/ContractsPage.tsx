@@ -1,11 +1,13 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, Fragment, useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 
 import {
+  deleteComparison,
   deleteContract,
   getContractReview,
+  listComparisons,
   listContracts,
   listDocuments,
   reviewContract,
@@ -15,6 +17,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import type {
   Contract,
+  ContractComparisonListItem,
   ContractReview,
   ContractRiskFlag,
   ContractRubricScore,
@@ -457,6 +460,7 @@ export function ContractsPage() {
   const { user, loading: authLoading, signInWithGoogle, getIdToken } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [comparisons, setComparisons] = useState<ContractComparisonListItem[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [contractType, setContractType] = useState("");
@@ -466,7 +470,6 @@ export function ContractsPage() {
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [loadedReviews, setLoadedReviews] = useState<Record<string, ContractReview>>({});
   const [reviewLoading, setReviewLoading] = useState(false);
-
   const processedDocuments = documents.filter((d) => d.status === "processed");
 
   const refresh = useCallback(
@@ -474,12 +477,14 @@ export function ContractsPage() {
       setListLoading(true);
       try {
         const token = await getIdToken();
-        const [docs, contractList] = await Promise.all([
+        const [docs, contractList, comparisonList] = await Promise.all([
           listDocuments(token, signal),
           listContracts(token, signal),
+          listComparisons(token, signal),
         ]);
         setDocuments(docs);
         setContracts(contractList);
+        setComparisons(comparisonList);
       } finally {
         setListLoading(false);
       }
@@ -551,6 +556,17 @@ export function ContractsPage() {
 
   function handleReviewUpdated(contractId: string, updated: ContractReview) {
     setLoadedReviews((prev) => ({ ...prev, [contractId]: updated }));
+  }
+
+  async function handleDeleteComparison(comparisonId: string) {
+    if (!window.confirm("Delete this saved comparison? This cannot be undone.")) return;
+    try {
+      const token = await getIdToken();
+      await deleteComparison(token, comparisonId);
+      setComparisons((prev) => prev.filter((c) => c.id !== comparisonId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -689,7 +705,14 @@ export function ContractsPage() {
       <section className="document-list" aria-labelledby="contracts-heading">
         <div className="document-list__heading">
           <h2 id="contracts-heading">Contract reviews</h2>
-          <span>{contracts.length} total</span>
+          <div className="document-list__heading-right">
+            {contracts.length >= 2 ? (
+              <Link className="table-action" to="/contracts/compare">
+                Compare contracts →
+              </Link>
+            ) : null}
+            <span>{contracts.length} total</span>
+          </div>
         </div>
 
         {listLoading ? (
@@ -712,9 +735,8 @@ export function ContractsPage() {
               </thead>
               <tbody>
                 {contracts.map((c) => (
-                  <>
+                  <Fragment key={c.id}>
                     <ContractRow
-                      key={c.id}
                       contract={c}
                       selected={selectedContractId === c.id}
                       onSelect={(id) => void handleSelectContract(id)}
@@ -737,13 +759,64 @@ export function ContractsPage() {
                         </td>
                       </tr>
                     ) : null}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
+
+      {comparisons.length > 0 && (
+        <section className="document-list" aria-labelledby="comparisons-heading">
+          <div className="document-list__heading">
+            <h2 id="comparisons-heading">Past comparisons</h2>
+            <span>{comparisons.length} total</span>
+          </div>
+          <div className="document-table-wrap">
+            <table className="document-table">
+              <thead>
+                <tr>
+                  <th>Contracts compared</th>
+                  <th>Best overall</th>
+                  <th>Date</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {comparisons.map((cmp) => {
+                  const date = new Intl.DateTimeFormat(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  }).format(new Date(cmp.created_at));
+                  return (
+                    <tr key={cmp.id}>
+                      <td>{cmp.vendor_names.join(" vs. ")}</td>
+                      <td>{cmp.best_overall_vendor ?? <em>—</em>}</td>
+                      <td>{date}</td>
+                      <td className="row-actions">
+                        <Link
+                          className="table-action"
+                          to={`/contracts/compare?saved=${cmp.id}`}
+                        >
+                          View
+                        </Link>
+                        <button
+                          type="button"
+                          className="table-action table-action--danger"
+                          onClick={() => void handleDeleteComparison(cmp.id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

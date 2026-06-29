@@ -45,6 +45,10 @@ export interface DocumentProcessResult {
   chunk_count: number;
 }
 
+export interface DocumentUpdateRequest {
+  original_filename: string;
+}
+
 export interface ContractReviewRequest {
   document_id: string;
   vendor_name?: string;
@@ -120,4 +124,52 @@ export interface ContractReviewUpdateRequest {
   recommendation?: string;
   risk_level?: "low" | "medium" | "high";
   total_score?: number;
+}
+
+export interface ContractCompareRequest {
+  contract_ids: string[];
+}
+
+export interface RankedContract {
+  rank: number;
+  contract_id: string;
+  vendor_name: string | null;
+  contract_type: string | null;
+  total_score: number;
+  risk_level: string;
+}
+
+export interface SideBySideRow {
+  category: string;
+  scores: { [contractId: string]: number };
+  max_score: number;
+}
+
+export interface AiPerContractNote {
+  contract_id: string;
+  strengths: string[];
+  weaknesses: string[];
+  verdict: string;
+}
+
+export interface ContractCompareResponse {
+  comparison_id: string;
+  ai_summary: string;
+  ai_model: string;
+  ai_per_contract: AiPerContractNote[];
+  ai_critical_differences: string[];
+  ranked_contracts: RankedContract[];
+  side_by_side_table: SideBySideRow[];
+  best_overall: string;
+  lowest_risk: string;
+  best_value: string;
+  key_differences: string[];
+}
+
+export interface ContractComparisonListItem {
+  id: string;
+  vendor_names: string[];
+  ai_model: string;
+  best_overall_vendor: string | null;
+  created_at: string;
 }

@@ -1,6 +1,9 @@
 import type {
   AuthenticatedUser,
   Contract,
+  ContractCompareRequest,
+  ContractCompareResponse,
+  ContractComparisonListItem,
   ContractReview,
   ContractReviewRequest,
   ContractReviewUpdateRequest,
@@ -10,6 +13,7 @@ import type {
   DocumentProcessResult,
   DocumentTextChunk,
   DocumentType,
+  DocumentUpdateRequest,
   HealthResponse,
 } from "../types/api";
 
@@ -106,6 +110,41 @@ export async function getDocument(
   }
 
   return response.json() as Promise<Document>;
+}
+
+export async function updateDocument(
+  idToken: string,
+  documentId: string,
+  request: DocumentUpdateRequest,
+): Promise<Document> {
+  const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not update document"));
+  }
+
+  return response.json() as Promise<Document>;
+}
+
+export async function deleteDocument(
+  idToken: string,
+  documentId: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not delete document"));
+  }
 }
 
 export async function processDocument(
@@ -276,5 +315,78 @@ export async function deleteContract(
 
   if (!response.ok) {
     throw new Error(await errorDetail(response, "Could not delete contract"));
+  }
+}
+
+export async function compareContracts(
+  idToken: string,
+  request: ContractCompareRequest,
+): Promise<ContractCompareResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/compare`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Contract comparison failed"));
+  }
+
+  return response.json() as Promise<ContractCompareResponse>;
+}
+
+export async function listComparisons(
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<ContractComparisonListItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/comparisons`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load comparisons"));
+  }
+
+  return response.json() as Promise<ContractComparisonListItem[]>;
+}
+
+export async function getComparison(
+  idToken: string,
+  comparisonId: string,
+  signal?: AbortSignal,
+): Promise<ContractCompareResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/comparisons/${comparisonId}`,
+    {
+      headers: { Authorization: `Bearer ${idToken}` },
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load comparison"));
+  }
+
+  return response.json() as Promise<ContractCompareResponse>;
+}
+
+export async function deleteComparison(
+  idToken: string,
+  comparisonId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/comparisons/${comparisonId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not delete comparison"));
   }
 }

@@ -27,6 +27,7 @@ from app.schemas.document import (
     DocumentProcessResponse,
     DocumentResponse,
     DocumentTextChunkResponse,
+    DocumentUpdateRequest,
 )
 from app.schemas.module import ModuleStatus
 from app.services.organization_service import (
@@ -345,3 +346,35 @@ async def get_document(
         document_id,
         organization.organization_id,
     )
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+def update_document(
+    document_id: uuid.UUID,
+    body: DocumentUpdateRequest,
+    organization: Annotated[
+        OrganizationContext, Depends(get_current_organization)
+    ],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Document:
+    doc = _get_organization_document(session, document_id, organization.organization_id)
+    doc.original_filename = body.original_filename.strip()
+    session.commit()
+    session.refresh(doc)
+    return doc
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: uuid.UUID,
+    organization: Annotated[
+        OrganizationContext, Depends(get_current_organization)
+    ],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> None:
+    doc = _get_organization_document(session, document_id, organization.organization_id)
+    session.execute(
+        delete(DocumentTextChunk).where(DocumentTextChunk.document_id == document_id)
+    )
+    session.delete(doc)
+    session.commit()

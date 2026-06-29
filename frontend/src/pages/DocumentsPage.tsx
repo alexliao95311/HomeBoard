@@ -7,7 +7,13 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 
-import { listDocuments, uploadDocument } from "../api/client";
+import {
+  deleteDocument,
+  listDocuments,
+  processDocument,
+  updateDocument,
+  uploadDocument,
+} from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { Document, DocumentType } from "../types/api";
 
@@ -29,6 +35,138 @@ function formatDocumentType(documentType: string): string {
   return documentType.replaceAll("_", " ");
 }
 
+function DocumentRow({
+  document,
+  onDelete,
+  onUpdate,
+}: {
+  document: Document;
+  onDelete: (id: string) => void;
+  onUpdate: (updated: Document) => void;
+}) {
+  const { getIdToken } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editName, setEditName] = useState("");
+
+  function startEditing(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditName(document.original_filename);
+    setEditing(true);
+  }
+
+  async function handleSave(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      const token = await getIdToken();
+      const updated = await updateDocument(token, document.id, {
+        original_filename: editName.trim(),
+      });
+      onUpdate(updated);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditing(false);
+  }
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    onDelete(document.id);
+  }
+
+  return (
+    <tr>
+      <td>
+        {editing ? (
+          <input
+            className="row-edit-input"
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+        ) : (
+          <>
+            <Link
+              className="document-name document-name--link"
+              to={`/documents/${document.id}`}
+            >
+              {document.original_filename}
+            </Link>
+            <span className="document-hash">
+              SHA-256 {document.sha256.slice(0, 12)}…
+            </span>
+          </>
+        )}
+      </td>
+      <td className="capitalize">{formatDocumentType(document.document_type)}</td>
+      <td>{formatBytes(document.size_bytes)}</td>
+      <td>
+        <span className="status-pill">{document.status}</span>
+      </td>
+      <td>
+        {new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(document.created_at))}
+      </td>
+      <td className="row-actions">
+        {editing ? (
+          <>
+            <button
+              type="button"
+              className="table-action"
+              onClick={(e) => void handleSave(e)}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--muted"
+              onClick={handleCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <Link
+              className="table-action"
+              to={`/documents/${document.id}`}
+            >
+              {document.status === "processed" ? "View text" : "View"}
+            </Link>
+            <button
+              type="button"
+              className="table-action"
+              onClick={startEditing}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--danger"
+              onClick={handleDelete}
+            >
+              Delete
+            </button>
+          </>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export function DocumentsPage() {
   const { user, loading: authLoading, signInWithGoogle, getIdToken } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -37,6 +175,7 @@ export function DocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<"uploading" | "processing" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -74,6 +213,29 @@ export function DocumentsPage() {
     return () => controller.abort();
   }, [user, refreshDocuments]);
 
+  async function handleDelete(documentId: string) {
+    if (
+      !window.confirm(
+        "Permanently delete this document? This cannot be undone.",
+      )
+    )
+      return;
+
+    try {
+      const token = await getIdToken();
+      await deleteDocument(token, documentId);
+      setDocuments((prev) => prev.filter((d) => d.id !== documentId));
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Delete failed",
+      );
+    }
+  }
+
+  function handleUpdate(updated: Document) {
+    setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+  }
+
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedFile) {
@@ -82,10 +244,13 @@ export function DocumentsPage() {
     }
 
     setUploadLoading(true);
+    setUploadStatus("uploading");
     setError(null);
     try {
       const token = await getIdToken();
-      await uploadDocument(token, selectedFile, documentType);
+      const doc = await uploadDocument(token, selectedFile, documentType);
+      setUploadStatus("processing");
+      await processDocument(token, doc.id);
       setSelectedFile(null);
       if (fileInput.current) fileInput.current.value = "";
       await refreshDocuments();
@@ -95,6 +260,7 @@ export function DocumentsPage() {
       );
     } finally {
       setUploadLoading(false);
+      setUploadStatus(null);
     }
   }
 
@@ -172,7 +338,11 @@ export function DocumentsPage() {
             type="submit"
             disabled={uploadLoading}
           >
-            {uploadLoading ? "Uploading…" : "Upload document"}
+            {uploadStatus === "uploading"
+              ? "Uploading…"
+              : uploadStatus === "processing"
+                ? "Processing…"
+                : "Upload document"}
           </button>
         </form>
       </section>
@@ -210,42 +380,12 @@ export function DocumentsPage() {
               </thead>
               <tbody>
                 {documents.map((document) => (
-                  <tr key={document.id}>
-                    <td>
-                      <Link
-                        className="document-name document-name--link"
-                        to={`/documents/${document.id}`}
-                      >
-                        {document.original_filename}
-                      </Link>
-                      <span className="document-hash">
-                        SHA-256 {document.sha256.slice(0, 12)}…
-                      </span>
-                    </td>
-                    <td className="capitalize">
-                      {formatDocumentType(document.document_type)}
-                    </td>
-                    <td>{formatBytes(document.size_bytes)}</td>
-                    <td>
-                      <span className="status-pill">{document.status}</span>
-                    </td>
-                    <td>
-                      {new Intl.DateTimeFormat(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(document.created_at))}
-                    </td>
-                    <td>
-                      <Link
-                        className="table-action"
-                        to={`/documents/${document.id}`}
-                      >
-                        {document.status === "processed"
-                          ? "View text"
-                          : "Process"}
-                      </Link>
-                    </td>
-                  </tr>
+                  <DocumentRow
+                    key={document.id}
+                    document={document}
+                    onDelete={(id) => void handleDelete(id)}
+                    onUpdate={handleUpdate}
+                  />
                 ))}
               </tbody>
             </table>
