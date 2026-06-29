@@ -16,7 +16,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            cd ~/HomeBoard
+            cd ~/HomeBoard/infra
+            docker compose down
             git pull origin main
-            cd infra
             docker compose --env-file ../.env up --build -d
