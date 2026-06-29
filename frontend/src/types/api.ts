@@ -79,6 +79,16 @@ export interface ContractRiskFlag {
   suggested_fix: string | null;
 }
 
+export interface BoardQuestion {
+  question: string;
+  section: string | null;
+}
+
+export interface NegotiationPoint {
+  point: string;
+  section: string | null;
+}
+
 export interface ContractReview {
   id: string;
   contract_id: string;
@@ -90,6 +100,8 @@ export interface ContractReview {
   recommendation: string;
   rubric_scores: ContractRubricScore[];
   risk_flags: ContractRiskFlag[];
+  board_questions: BoardQuestion[];
+  negotiation_points: NegotiationPoint[];
   created_at: string;
 }
 

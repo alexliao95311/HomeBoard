@@ -108,23 +108,31 @@ def test_review_returns_full_contract_review(contract_client) -> None:
     review = body["review"]
     assert review["total_score"] == "75.00"
     assert review["risk_level"] == "medium"
-    assert "placeholder" in review["executive_summary"].lower()
-    assert len(review["rubric_scores"]) == 5
-    assert len(review["risk_flags"]) == 2
+    assert len(review["executive_summary"]) > 50
+    assert len(review["rubric_scores"]) == 8
+    assert len(review["risk_flags"]) >= 2
 
     categories = {s["category"] for s in review["rubric_scores"]}
     assert "Price / Value" in categories
     assert "Scope Clarity" in categories
+    assert "Vendor Obligations" in categories
+    assert "HOA Flexibility" in categories
 
     severities = {f["severity"] for f in review["risk_flags"]}
     assert "high" in severities
     assert "medium" in severities
 
+    # board_questions and negotiation_points are now structured objects
+    assert len(review["board_questions"]) >= 1
+    assert "question" in review["board_questions"][0]
+    assert len(review["negotiation_points"]) >= 1
+    assert "point" in review["negotiation_points"][0]
+
     with test_session() as session:
         assert session.scalar(select(func.count()).select_from(Contract)) == 1
         assert session.scalar(select(func.count()).select_from(ContractReview)) == 1
-        assert session.scalar(select(func.count()).select_from(ContractRubricScore)) == 5
-        assert session.scalar(select(func.count()).select_from(ContractRiskFlag)) == 2
+        assert session.scalar(select(func.count()).select_from(ContractRubricScore)) == 8
+        assert session.scalar(select(func.count()).select_from(ContractRiskFlag)) >= 2
 
 
 def test_review_rejects_unprocessed_document(contract_client) -> None:
@@ -183,8 +191,8 @@ def test_get_contract_and_review(contract_client) -> None:
     assert get_review.status_code == 200
     body = get_review.json()
     assert body["total_score"] == "75.00"
-    assert len(body["rubric_scores"]) == 5
-    assert len(body["risk_flags"]) == 2
+    assert len(body["rubric_scores"]) == 8
+    assert len(body["risk_flags"]) >= 2
 
 
 def test_update_contract_fields(contract_client) -> None:
@@ -233,7 +241,7 @@ def test_update_review_fields(contract_client) -> None:
     assert body["recommendation"] == "Edited recommendation."
     assert body["risk_level"] == "high"
     assert body["total_score"] == "60.00"
-    assert len(body["rubric_scores"]) == 5
+    assert len(body["rubric_scores"]) == 8
 
 
 def test_delete_contract_permanently(contract_client) -> None:

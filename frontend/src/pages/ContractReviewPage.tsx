@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { getContract, getContractReview } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import type { Contract, ContractReview, ContractRiskFlag, ContractRubricScore } from "../types/api";
+import type {
+  BoardQuestion,
+  Contract,
+  ContractReview,
+  ContractRiskFlag,
+  ContractRubricScore,
+  NegotiationPoint,
+} from "../types/api";
 
 function RiskBadge({ level }: { level: string }) {
   const cls =
@@ -45,11 +54,24 @@ function RubricTable({ scores }: { scores: ContractRubricScore[] }) {
             <td>
               <ScoreBar score={Number(s.score)} max={Number(s.max_score)} />
             </td>
-            <td className="rubric-table__explanation">{s.explanation}</td>
+            <td className="rubric-table__explanation">
+              {s.explanation}
+              {s.citation ? (
+                <span className="rubric-citation">{s.citation}</span>
+              ) : null}
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+function Prose({ children, className }: { children: string; className?: string }) {
+  return (
+    <div className={`prose ${className ?? ""}`.trim()}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+    </div>
   );
 }
 
@@ -64,6 +86,9 @@ function RiskFlags({ flags }: { flags: ContractRiskFlag[] }) {
             <RiskBadge level={f.severity} />
           </div>
           <p className="risk-flag__explanation">{f.explanation}</p>
+          {f.citation ? (
+            <p className="risk-flag__citation">{f.citation}</p>
+          ) : null}
           {f.suggested_fix ? (
             <p className="risk-flag__fix">
               <strong>Suggested fix:</strong> {f.suggested_fix}
@@ -197,12 +222,14 @@ export function ContractReviewPage() {
       <div className="review-page__body">
         <section className="review-section">
           <h3>Executive summary</h3>
-          <p>{review.executive_summary}</p>
+          <Prose>{review.executive_summary}</Prose>
         </section>
 
         <section className="review-section">
           <h3>Recommendation</h3>
-          <p className="review-recommendation">{review.recommendation}</p>
+          <div className="review-recommendation">
+            <Prose className="prose--recommendation">{review.recommendation}</Prose>
+          </div>
         </section>
 
         <section className="review-section">
@@ -214,6 +241,38 @@ export function ContractReviewPage() {
           <section className="review-section">
             <h3>Risk flags</h3>
             <RiskFlags flags={review.risk_flags} />
+          </section>
+        ) : null}
+
+        {review.board_questions.length > 0 ? (
+          <section className="review-section">
+            <h3>Questions for the vendor</h3>
+            <ol className="review-list review-list--questions">
+              {review.board_questions.map((q: BoardQuestion, i: number) => (
+                <li key={i}>
+                  <span>{q.question}</span>
+                  {q.section ? (
+                    <span className="review-ref">{q.section}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+
+        {review.negotiation_points.length > 0 ? (
+          <section className="review-section">
+            <h3>Negotiation points</h3>
+            <ul className="review-list review-list--points">
+              {review.negotiation_points.map((p: NegotiationPoint, i: number) => (
+                <li key={i}>
+                  <span>{p.point}</span>
+                  {p.section ? (
+                    <span className="review-ref">{p.section}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 

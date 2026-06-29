@@ -1,4 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 
 import {
@@ -59,7 +61,12 @@ function RubricTable({ scores }: { scores: ContractRubricScore[] }) {
             <td>
               <ScoreBar score={Number(s.score)} max={Number(s.max_score)} />
             </td>
-            <td className="rubric-table__explanation">{s.explanation}</td>
+            <td className="rubric-table__explanation">
+                {s.explanation}
+                {s.citation ? (
+                  <span className="rubric-citation">{s.citation}</span>
+                ) : null}
+              </td>
           </tr>
         ))}
       </tbody>
@@ -78,6 +85,9 @@ function RiskFlags({ flags }: { flags: ContractRiskFlag[] }) {
             <RiskBadge level={f.severity} />
           </div>
           <p className="risk-flag__explanation">{f.explanation}</p>
+          {f.citation ? (
+            <p className="risk-flag__citation">{f.citation}</p>
+          ) : null}
           {f.suggested_fix ? (
             <p className="risk-flag__fix">
               <strong>Suggested fix:</strong> {f.suggested_fix}
@@ -242,10 +252,14 @@ function ReviewPanel({
             className="review-textarea"
             value={editSummary}
             onChange={(e) => setEditSummary(e.target.value)}
-            rows={4}
+            rows={8}
           />
         ) : (
-          <p>{review.executive_summary}</p>
+          <div className="prose">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {review.executive_summary}
+            </ReactMarkdown>
+          </div>
         )}
       </section>
 
@@ -256,10 +270,16 @@ function ReviewPanel({
             className="review-textarea"
             value={editRecommendation}
             onChange={(e) => setEditRecommendation(e.target.value)}
-            rows={3}
+            rows={5}
           />
         ) : (
-          <p className="review-recommendation">{review.recommendation}</p>
+          <div className="review-recommendation">
+            <div className="prose prose--recommendation">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {review.recommendation}
+              </ReactMarkdown>
+            </div>
+          </div>
         )}
       </section>
 

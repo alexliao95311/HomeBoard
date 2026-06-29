@@ -59,6 +59,8 @@ class ContractReviewResponse(BaseModel):
     recommendation: str
     rubric_scores: list[ContractRubricScoreResponse]
     risk_flags: list[ContractRiskFlagResponse]
+    board_questions: list[dict] = []
+    negotiation_points: list[dict] = []
     created_at: datetime
 
 

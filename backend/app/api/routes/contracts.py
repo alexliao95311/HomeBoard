@@ -62,6 +62,7 @@ def _build_review_response(
     rubric_scores: list[ContractRubricScore],
     risk_flags: list[ContractRiskFlag],
 ) -> ContractReviewResponse:
+    raw = review.raw_output_json or {}
     return ContractReviewResponse(
         id=review.id,
         contract_id=review.contract_id,
@@ -80,6 +81,8 @@ def _build_review_response(
             ContractRiskFlagResponse.model_validate(rf, from_attributes=True)
             for rf in risk_flags
         ],
+        board_questions=raw.get("board_questions", []),
+        negotiation_points=raw.get("negotiation_points", []),
     )
 
 

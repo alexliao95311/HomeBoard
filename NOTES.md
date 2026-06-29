@@ -263,6 +263,29 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
 - [x] Added `.review-page` layout styles (max-width 900 px, topbar with back link
   and export button, header with score block, body with 780 px content column).
 
+### 17. Improved Contract Review AI Prompt
+
+- [x] Rewrote `_SYSTEM_PROMPT`: establishes HOA contract review assistant role (not a
+  lawyer), forbids invented facts, requires citations from contract text, mandates
+  JSON-only output.
+- [x] Rewrote `_USER_PROMPT_TEMPLATE`: 8-category rubric (Price/Value 20, Scope
+  Clarity 15, Term/Cancellation 15, Liability/Insurance 15, Vendor Obligations 10,
+  Payment Terms 10, Compliance/Doc Completeness 10, HOA Flexibility 5 = 100 pts);
+  `total_score` must equal exact rubric sum; first sentence of executive_summary must
+  state "not legal advice"; citation fields required throughout.
+- [x] Added `board_questions` and `negotiation_points` lists to `ContractReviewResult`
+  Pydantic model and to the prompt output schema.
+- [x] Updated fake result to 8 rubric categories (scores sum to 75) with sample
+  board_questions and negotiation_points.
+- [x] Updated `ContractReviewResponse` schema to include `board_questions` and
+  `negotiation_points` (pulled from `raw_output_json` at read time; no new DB columns
+  needed).
+- [x] Updated `_build_review_response` to read the two lists from `raw_output_json`.
+- [x] Updated `ContractReview` TypeScript interface with the two new list fields.
+- [x] Added "Questions for the vendor" and "Negotiation points" sections to
+  `ContractReviewPage.tsx`.
+- [x] All 11 contract tests pass.
+
 ## Next Work
 
 1. Decide when to move document binaries from local storage to Firebase Cloud

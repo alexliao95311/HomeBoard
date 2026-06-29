@@ -907,8 +907,99 @@ h1 {
   line-height: 1.7;
 }
 
+/* ── Prose (react-markdown) ── */
+
+.prose {
+  color: #3d4a44;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.prose h2 {
+  margin: 22px 0 6px;
+  color: #153f33;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.prose h2:first-child {
+  margin-top: 0;
+}
+
+.prose p {
+  margin: 0 0 12px;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.prose li {
+  margin-bottom: 4px;
+}
+
+.prose li:last-child {
+  margin-bottom: 0;
+}
+
+.prose strong {
+  font-weight: 750;
+  color: #25312c;
+}
+
+.prose em {
+  color: #7a8480;
+  font-size: 12px;
+}
+
+.prose--recommendation p,
+.prose--recommendation li {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.prose--recommendation strong:first-child {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #153f33;
+}
+
+.rubric-citation {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid rgb(21 63 51 / 20%);
+  color: #59706a;
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.risk-flag__citation {
+  margin: 6px 0 8px;
+  padding: 6px 10px;
+  border-left: 2px solid currentColor;
+  opacity: 0.75;
+  color: inherit;
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
 .review-recommendation {
-  padding: 16px;
+  padding: 20px 20px 8px;
   border-left: 3px solid #153f33;
   background: rgb(21 63 51 / 5%);
   border-radius: 0 6px 6px 0;
@@ -1023,6 +1114,34 @@ h1 {
 
 .risk-flag__fix {
   margin-bottom: 0;
+}
+
+.review-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #3d4a44;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.review-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 14px;
+}
+
+.review-list li:last-child {
+  margin-bottom: 0;
+}
+
+.review-ref {
+  display: inline-block;
+  color: #315f50;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
 }
 
 .review-disclaimer {

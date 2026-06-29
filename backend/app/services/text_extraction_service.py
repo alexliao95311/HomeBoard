@@ -1,10 +1,39 @@
 import csv
+import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 import fitz
 from docx import Document as WordDocument
 from openpyxl import load_workbook
+
+# Ligature characters that LaTeX/Type1 PDFs often leave un-expanded.
+_LIGATURE_MAP = str.maketrans({
+    "ﬀ": "ff",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬅ": "st",
+    "ﬆ": "st",
+    "’": "'",   # right single quotation → apostrophe
+    "‘": "'",
+    "“": '"',
+    "”": '"',
+    "–": "-",   # en dash
+    "—": "--",  # em dash
+    " ": " ",   # non-breaking space
+})
+_MULTI_BLANK_LINE_RE = re.compile(r"\n{3,}")
+
+
+def _clean_text(text: str) -> str:
+    """Expand ligatures, normalize Unicode, collapse excessive blank lines."""
+    text = text.translate(_LIGATURE_MAP)
+    text = unicodedata.normalize("NFKC", text)
+    text = _MULTI_BLANK_LINE_RE.sub("\n\n", text)
+    return text.strip()
 
 
 @dataclass(frozen=True)
@@ -25,12 +54,17 @@ class DocumentExtractionError(Exception):
 
 
 def _extract_pdf(path: Path) -> list[ExtractedSection]:
+    # TEXT_DEHYPHENATE removes soft hyphens at line ends.
+    # Omitting TEXT_PRESERVE_LIGATURES causes PyMuPDF to expand fi/fl/ff etc.
+    # sort=True reads blocks in natural reading order (helps with multi-column PDFs).
+    _FLAGS = fitz.TEXT_DEHYPHENATE
     sections: list[ExtractedSection] = []
     with fitz.open(path) as pdf:
         for page_index, page in enumerate(pdf):
+            raw = page.get_text("text", sort=True, flags=_FLAGS)
             sections.append(
                 ExtractedSection(
-                    text=page.get_text("text"),
+                    text=_clean_text(raw),
                     page_number=page_index + 1,
                 )
             )
@@ -47,7 +81,7 @@ def _extract_docx(path: Path) -> list[ExtractedSection]:
             if any(values):
                 lines.append(" | ".join(values))
 
-    return [ExtractedSection(text="\n".join(lines))]
+    return [ExtractedSection(text=_clean_text("\n".join(lines)))]
 
 
 def _extract_csv(path: Path) -> list[ExtractedSection]:
