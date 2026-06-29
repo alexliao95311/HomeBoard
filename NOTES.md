@@ -204,7 +204,7 @@ The `/api/v1/documents` equivalents are also available.
   review panels.
 - [x] Added "Review contracts" link from the dashboard.
 
-### 14. AI Provider Abstraction for Contract Review
+### 14A. AI Provider Abstraction for Contract Review
 
 - [x] Added `app/ai/providers/base.py` with `AIProvider` ABC (`complete` method).
 - [x] Added `app/ai/providers/openrouter_provider.py` with HTTP error, timeout,
@@ -223,6 +223,24 @@ The `/api/v1/documents` equivalents are also available.
   disclaimer text for real vs. placeholder reviews.
 
 To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
+
+### 15. Contract Review Edit and Delete
+
+- [x] Added `PATCH /api/v1/contracts/{id}` — updates `vendor_name` and
+  `contract_type`; uses `model_fields_set` so omitted fields are untouched.
+- [x] Added `PATCH /api/v1/contracts/{id}/review` — updates
+  `executive_summary`, `recommendation`, `risk_level`, and `total_score` on
+  the most recent review; returns the full review with rubric scores and risk
+  flags.
+- [x] Added `DELETE /api/v1/contracts/{id}` — permanently removes the contract
+  row; PostgreSQL CASCADE deletes the linked review, rubric scores, and risk
+  flags.
+- [x] Added 4 new backend tests (26 total).
+- [x] Updated the contract table row with inline Edit mode (vendor name and
+  type become inputs) and a Delete button with a `window.confirm` guard.
+- [x] Updated the review panel with an "Edit review" toggle that makes
+  summary and recommendation textareas, risk level a select, and score a
+  number input; changes are saved via PATCH without a page reload.
 
 ## Next Work
 

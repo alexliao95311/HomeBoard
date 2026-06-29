@@ -1,10 +1,13 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import {
+  deleteContract,
   getContractReview,
   listContracts,
   listDocuments,
   reviewContract,
+  updateContract,
+  updateContractReview,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type {
@@ -68,10 +71,7 @@ function RiskFlags({ flags }: { flags: ContractRiskFlag[] }) {
   return (
     <div className="risk-flags">
       {flags.map((f) => (
-        <div
-          key={f.id}
-          className={`risk-flag risk-flag--${f.severity}`}
-        >
+        <div key={f.id} className={`risk-flag risk-flag--${f.severity}`}>
           <div className="risk-flag__header">
             <span className="risk-flag__type">{f.risk_type}</span>
             <RiskBadge level={f.severity} />
@@ -88,30 +88,160 @@ function RiskFlags({ flags }: { flags: ContractRiskFlag[] }) {
   );
 }
 
-function ReviewPanel({ review }: { review: ContractReview }) {
+function ReviewPanel({
+  review,
+  onSave,
+}: {
+  review: ContractReview;
+  onSave: (updated: ContractReview) => void;
+}) {
+  const { getIdToken } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [editSummary, setEditSummary] = useState("");
+  const [editRecommendation, setEditRecommendation] = useState("");
+  const [editRiskLevel, setEditRiskLevel] = useState<"low" | "medium" | "high">("medium");
+  const [editScore, setEditScore] = useState("");
+
+  function startEditing() {
+    setEditSummary(review.executive_summary);
+    setEditRecommendation(review.recommendation);
+    setEditRiskLevel(review.risk_level as "low" | "medium" | "high");
+    setEditScore(String(Number(review.total_score)));
+    setEditError(null);
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setEditError(null);
+    try {
+      const token = await getIdToken();
+      const updated = await updateContractReview(token, review.contract_id, {
+        executive_summary: editSummary,
+        recommendation: editRecommendation,
+        risk_level: editRiskLevel,
+        total_score: Number(editScore),
+      });
+      onSave(updated);
+      setEditing(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const totalScore = Number(review.total_score);
   const isFake = review.model_name === "placeholder";
+
   return (
     <div className="review-panel">
       <div className="review-panel__header">
         <div className="review-panel__score">
-          <span className="review-panel__score-value">{totalScore}</span>
-          <span className="review-panel__score-denom">/100</span>
+          {editing ? (
+            <input
+              className="review-score-input"
+              type="number"
+              min={0}
+              max={100}
+              value={editScore}
+              onChange={(e) => setEditScore(e.target.value)}
+            />
+          ) : (
+            <>
+              <span className="review-panel__score-value">{totalScore}</span>
+              <span className="review-panel__score-denom">/100</span>
+            </>
+          )}
         </div>
-        <RiskBadge level={review.risk_level} />
+
+        {editing ? (
+          <select
+            className="review-risk-select"
+            value={editRiskLevel}
+            onChange={(e) =>
+              setEditRiskLevel(e.target.value as "low" | "medium" | "high")
+            }
+          >
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        ) : (
+          <RiskBadge level={review.risk_level} />
+        )}
+
         <span className="review-model-badge">
           {isFake ? "Placeholder reviewer" : review.model_name}
         </span>
+
+        <div className="review-panel__actions">
+          {editing ? (
+            <>
+              <button
+                type="button"
+                className="table-action"
+                onClick={() => void handleSave()}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className="table-action table-action--muted"
+                onClick={() => setEditing(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="table-action"
+              onClick={startEditing}
+            >
+              Edit review
+            </button>
+          )}
+        </div>
       </div>
+
+      {editError ? (
+        <div className="document-error" role="alert" style={{ marginBottom: 16 }}>
+          {editError}
+        </div>
+      ) : null}
 
       <section className="review-section">
         <h3>Executive summary</h3>
-        <p>{review.executive_summary}</p>
+        {editing ? (
+          <textarea
+            className="review-textarea"
+            value={editSummary}
+            onChange={(e) => setEditSummary(e.target.value)}
+            rows={4}
+          />
+        ) : (
+          <p>{review.executive_summary}</p>
+        )}
       </section>
 
       <section className="review-section">
         <h3>Recommendation</h3>
-        <p className="review-recommendation">{review.recommendation}</p>
+        {editing ? (
+          <textarea
+            className="review-textarea"
+            value={editRecommendation}
+            onChange={(e) => setEditRecommendation(e.target.value)}
+            rows={3}
+          />
+        ) : (
+          <p className="review-recommendation">{review.recommendation}</p>
+        )}
       </section>
 
       <section className="review-section">
@@ -137,41 +267,148 @@ function ReviewPanel({ review }: { review: ContractReview }) {
 
 function ContractRow({
   contract,
-  onSelect,
   selected,
+  onSelect,
+  onDelete,
+  onUpdate,
 }: {
   contract: Contract;
-  onSelect: (id: string) => void;
   selected: boolean;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onUpdate: (updated: Contract) => void;
 }) {
+  const { getIdToken } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editVendor, setEditVendor] = useState("");
+  const [editType, setEditType] = useState("");
+
+  function startEditing(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditVendor(contract.vendor_name ?? "");
+    setEditType(contract.contract_type ?? "");
+    setEditing(true);
+  }
+
+  async function handleSave(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSaving(true);
+    try {
+      const token = await getIdToken();
+      const updated = await updateContract(token, contract.id, {
+        vendor_name: editVendor.trim() || null,
+        contract_type: editType.trim() || null,
+      });
+      onUpdate(updated);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditing(false);
+  }
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    onDelete(contract.id);
+  }
+
+  const formattedDate = new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(contract.created_at));
+
   return (
     <tr
       className={`contract-row${selected ? " contract-row--selected" : ""}`}
-      onClick={() => onSelect(contract.id)}
-      style={{ cursor: "pointer" }}
+      onClick={() => !editing && onSelect(contract.id)}
+      style={{ cursor: editing ? "default" : "pointer" }}
     >
-      <td>{contract.vendor_name ?? <em>Unknown vendor</em>}</td>
-      <td className="capitalize">{contract.contract_type ?? <em>—</em>}</td>
+      <td>
+        {editing ? (
+          <input
+            className="row-edit-input"
+            type="text"
+            value={editVendor}
+            onChange={(e) => setEditVendor(e.target.value)}
+            placeholder="Vendor name"
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+        ) : (
+          contract.vendor_name ?? <em>Unknown vendor</em>
+        )}
+      </td>
+      <td>
+        {editing ? (
+          <input
+            className="row-edit-input"
+            type="text"
+            value={editType}
+            onChange={(e) => setEditType(e.target.value)}
+            placeholder="Contract type"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="capitalize">{contract.contract_type ?? <em>—</em>}</span>
+        )}
+      </td>
       <td>
         <span className="status-pill">{contract.status}</span>
       </td>
-      <td>
-        {new Intl.DateTimeFormat(undefined, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date(contract.created_at))}
-      </td>
-      <td>
-        <button
-          type="button"
-          className="table-action"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(contract.id);
-          }}
-        >
-          {selected ? "Hide review" : "View review"}
-        </button>
+      <td>{formattedDate}</td>
+      <td className="row-actions">
+        {editing ? (
+          <>
+            <button
+              type="button"
+              className="table-action"
+              onClick={(e) => void handleSave(e)}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--muted"
+              onClick={handleCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="table-action"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(contract.id);
+              }}
+            >
+              {selected ? "Hide" : "Review"}
+            </button>
+            <button
+              type="button"
+              className="table-action"
+              onClick={startEditing}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--danger"
+              onClick={handleDelete}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </td>
     </tr>
   );
@@ -246,10 +483,41 @@ export function ContractsPage() {
     }
   }
 
+  async function handleDelete(contractId: string) {
+    if (
+      !window.confirm(
+        "Permanently delete this contract and its review? This cannot be undone.",
+      )
+    )
+      return;
+
+    try {
+      const token = await getIdToken();
+      await deleteContract(token, contractId);
+      setContracts((prev) => prev.filter((c) => c.id !== contractId));
+      if (selectedContractId === contractId) setSelectedContractId(null);
+      setLoadedReviews((prev) => {
+        const next = { ...prev };
+        delete next[contractId];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  function handleContractUpdated(updated: Contract) {
+    setContracts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }
+
+  function handleReviewUpdated(contractId: string, updated: ContractReview) {
+    setLoadedReviews((prev) => ({ ...prev, [contractId]: updated }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDocumentId) {
-      setError("Select");
+      setError("Select a processed document to review");
       return;
     }
 
@@ -305,6 +573,9 @@ export function ContractsPage() {
           <p className="eyebrow">Contract review</p>
           <h1 className="page-title">Review vendor contracts.</h1>
         </div>
+        <p className="page-copy">
+          Select a processed document to generate a contract review.
+        </p>
       </div>
 
       <section className="upload-panel" aria-labelledby="review-heading">
@@ -327,7 +598,7 @@ export function ContractsPage() {
               disabled={submitting}
               required
             >
-              <option value="">— select —</option>
+              <option value="">— select a processed document —</option>
               {processedDocuments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.original_filename}
@@ -408,6 +679,8 @@ export function ContractsPage() {
                       contract={c}
                       selected={selectedContractId === c.id}
                       onSelect={(id) => void handleSelectContract(id)}
+                      onDelete={(id) => void handleDelete(id)}
+                      onUpdate={handleContractUpdated}
                     />
                     {selectedContractId === c.id ? (
                       <tr key={`${c.id}-review`}>
@@ -415,7 +688,12 @@ export function ContractsPage() {
                           {reviewLoading && !loadedReviews[c.id] ? (
                             <p className="empty-state">Loading review…</p>
                           ) : loadedReviews[c.id] ? (
-                            <ReviewPanel review={loadedReviews[c.id]} />
+                            <ReviewPanel
+                              review={loadedReviews[c.id]}
+                              onSave={(updated) =>
+                                handleReviewUpdated(c.id, updated)
+                              }
+                            />
                           ) : null}
                         </td>
                       </tr>

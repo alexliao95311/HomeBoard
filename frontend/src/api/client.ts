@@ -1,8 +1,10 @@
 import type {
   AuthenticatedUser,
   Contract,
-  ContractReviewRequest,
   ContractReview,
+  ContractReviewRequest,
+  ContractReviewUpdateRequest,
+  ContractUpdateRequest,
   ContractWithReview,
   Document,
   DocumentProcessResult,
@@ -199,4 +201,63 @@ export async function getContractReview(
   }
 
   return response.json() as Promise<ContractReview>;
+}
+
+export async function updateContract(
+  idToken: string,
+  contractId: string,
+  request: ContractUpdateRequest,
+): Promise<Contract> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/${contractId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not update contract"));
+  }
+
+  return response.json() as Promise<Contract>;
+}
+
+export async function updateContractReview(
+  idToken: string,
+  contractId: string,
+  request: ContractReviewUpdateRequest,
+): Promise<ContractReview> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/${contractId}/review`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not update review"));
+  }
+
+  return response.json() as Promise<ContractReview>;
+}
+
+export async function deleteContract(
+  idToken: string,
+  contractId: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/${contractId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not delete contract"));
+  }
 }

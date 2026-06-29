@@ -596,11 +596,55 @@ h1 {
 
 .table-action {
   white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
 }
 
 .table-action:hover,
 .back-link:hover {
   color: #92702f;
+}
+
+.table-action--muted {
+  color: #8a9490;
+}
+
+.table-action--muted:hover {
+  color: #59635f;
+}
+
+.table-action--danger {
+  color: #8b3c31;
+}
+
+.table-action--danger:hover {
+  color: #b85c4d;
+}
+
+.table-action:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.row-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.row-edit-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgb(21 63 51 / 28%);
+  border-radius: 5px;
+  color: #17211d;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
 }
 
 .back-link {
@@ -766,6 +810,49 @@ h1 {
   gap: 16px;
   align-items: center;
   margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.review-panel__actions {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.review-score-input {
+  width: 72px;
+  padding: 6px 10px;
+  border: 1px solid rgb(21 63 51 / 28%);
+  border-radius: 6px;
+  font-family: Georgia, serif;
+  font-size: 32px;
+  font-weight: 500;
+  color: #153f33;
+  background: #fff;
+}
+
+.review-risk-select {
+  padding: 5px 10px;
+  border: 1px solid rgb(21 63 51 / 28%);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fff;
+  cursor: pointer;
+}
+
+.review-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgb(21 63 51 / 22%);
+  border-radius: 7px;
+  color: #25312c;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.65;
+  resize: vertical;
 }
 
 .review-panel__score {

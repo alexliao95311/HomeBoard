@@ -97,3 +97,15 @@ export interface ContractWithReview {
   contract: Contract;
   review: ContractReview;
 }
+
+export interface ContractUpdateRequest {
+  vendor_name?: string | null;
+  contract_type?: string | null;
+}
+
+export interface ContractReviewUpdateRequest {
+  executive_summary?: string;
+  recommendation?: string;
+  risk_level?: "low" | "medium" | "high";
+  total_score?: number;
+}

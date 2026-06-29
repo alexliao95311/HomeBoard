@@ -187,6 +187,83 @@ def test_get_contract_and_review(contract_client) -> None:
     assert len(body["risk_flags"]) == 2
 
 
+def test_update_contract_fields(contract_client) -> None:
+    client, _, _ = contract_client
+    document_id = _upload_and_process_pdf(client)
+    result = client.post("/api/v1/contracts/review", json={"document_id": document_id})
+    contract_id = result.json()["contract"]["id"]
+
+    response = client.patch(
+        f"/api/v1/contracts/{contract_id}",
+        json={"vendor_name": "Updated Vendor", "contract_type": "pool"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["vendor_name"] == "Updated Vendor"
+    assert body["contract_type"] == "pool"
+
+    # partial update — only vendor_name changes, contract_type stays
+    response2 = client.patch(
+        f"/api/v1/contracts/{contract_id}",
+        json={"vendor_name": "Renamed"},
+    )
+    assert response2.status_code == 200
+    assert response2.json()["vendor_name"] == "Renamed"
+    assert response2.json()["contract_type"] == "pool"
+
+
+def test_update_review_fields(contract_client) -> None:
+    client, _, _ = contract_client
+    document_id = _upload_and_process_pdf(client)
+    result = client.post("/api/v1/contracts/review", json={"document_id": document_id})
+    contract_id = result.json()["contract"]["id"]
+
+    response = client.patch(
+        f"/api/v1/contracts/{contract_id}/review",
+        json={
+            "executive_summary": "Edited summary.",
+            "recommendation": "Edited recommendation.",
+            "risk_level": "high",
+            "total_score": 60,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["executive_summary"] == "Edited summary."
+    assert body["recommendation"] == "Edited recommendation."
+    assert body["risk_level"] == "high"
+    assert body["total_score"] == "60.00"
+    assert len(body["rubric_scores"]) == 5
+
+
+def test_delete_contract_permanently(contract_client) -> None:
+    client, _, _ = contract_client
+    document_id = _upload_and_process_pdf(client)
+    result = client.post("/api/v1/contracts/review", json={"document_id": document_id})
+    contract_id = result.json()["contract"]["id"]
+
+    delete_response = client.delete(f"/api/v1/contracts/{contract_id}")
+    assert delete_response.status_code == 204
+
+    assert client.get(f"/api/v1/contracts/{contract_id}").status_code == 404
+    assert client.get("/api/v1/contracts").json() == []
+
+
+def test_delete_requires_organization_ownership(contract_client) -> None:
+    client, _, _ = contract_client
+    document_id = _upload_and_process_pdf(client)
+    result = client.post("/api/v1/contracts/review", json={"document_id": document_id})
+    contract_id = result.json()["contract"]["id"]
+
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        uid="firebase-user-two",
+        email="other@example.com",
+        name="Other Board",
+        email_verified=True,
+    )
+    assert client.delete(f"/api/v1/contracts/{contract_id}").status_code == 404
+
+
 def test_contract_review_is_organization_scoped(contract_client) -> None:
     client, _, _ = contract_client
     document_id = _upload_and_process_pdf(client)

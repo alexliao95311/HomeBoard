@@ -2,8 +2,8 @@ from decimal import Decimal
 from typing import Annotated
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.contract_reviewer import (
@@ -27,8 +27,10 @@ from app.schemas.contract import (
     ContractResponse,
     ContractReviewRequest,
     ContractReviewResponse,
+    ContractReviewUpdateRequest,
     ContractRiskFlagResponse,
     ContractRubricScoreResponse,
+    ContractUpdateRequest,
     ContractWithReviewResponse,
 )
 from app.services.organization_service import (
@@ -279,3 +281,78 @@ def get_contract_review(
     )
 
     return _build_review_response(review, rubric_scores, risk_flags)
+
+
+@router.patch("/{contract_id}", response_model=ContractResponse)
+def update_contract(
+    contract_id: uuid.UUID,
+    request: ContractUpdateRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Contract:
+    contract = _get_org_contract(session, contract_id, organization.organization_id)
+    for field in request.model_fields_set:
+        setattr(contract, field, getattr(request, field))
+    session.commit()
+    session.refresh(contract)
+    return contract
+
+
+@router.patch("/{contract_id}/review", response_model=ContractReviewResponse)
+def update_contract_review(
+    contract_id: uuid.UUID,
+    request: ContractReviewUpdateRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ContractReviewResponse:
+    _get_org_contract(session, contract_id, organization.organization_id)
+
+    review = session.scalar(
+        select(ContractReview)
+        .where(ContractReview.contract_id == contract_id)
+        .order_by(ContractReview.created_at.desc())
+    )
+    if review is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No review found for this contract",
+        )
+
+    for field in request.model_fields_set:
+        value = getattr(request, field)
+        if field == "total_score" and value is not None:
+            value = Decimal(str(value))
+        setattr(review, field, value)
+
+    session.commit()
+    session.refresh(review)
+
+    rubric_scores = list(
+        session.scalars(
+            select(ContractRubricScore).where(
+                ContractRubricScore.contract_review_id == review.id
+            )
+        )
+    )
+    risk_flags = list(
+        session.scalars(
+            select(ContractRiskFlag).where(
+                ContractRiskFlag.contract_review_id == review.id
+            )
+        )
+    )
+    return _build_review_response(review, rubric_scores, risk_flags)
+
+
+@router.delete("/{contract_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_contract(
+    contract_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    _get_org_contract(session, contract_id, organization.organization_id)
+    session.execute(
+        sql_delete(Contract).where(Contract.id == contract_id)
+    )
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

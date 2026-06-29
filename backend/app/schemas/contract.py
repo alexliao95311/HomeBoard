@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContractReviewRequest(BaseModel):
@@ -64,3 +65,15 @@ class ContractReviewResponse(BaseModel):
 class ContractWithReviewResponse(BaseModel):
     contract: ContractResponse
     review: ContractReviewResponse
+
+
+class ContractUpdateRequest(BaseModel):
+    vendor_name: str | None = None
+    contract_type: str | None = None
+
+
+class ContractReviewUpdateRequest(BaseModel):
+    executive_summary: str | None = None
+    recommendation: str | None = None
+    risk_level: Literal["low", "medium", "high"] | None = None
+    total_score: int | None = Field(None, ge=0, le=100)
