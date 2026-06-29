@@ -8,13 +8,12 @@ from app.api.router import api_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.health import router as health_router
 from app.config import settings
-from app.database import engine, initialize_database, verify_database_connection
+from app.database import engine, verify_database_connection
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     verify_database_connection()
-    initialize_database()
     yield
     engine.dispose()
 
