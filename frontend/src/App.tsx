@@ -9,6 +9,7 @@ import {
 
 import { getHealth } from "./api/client";
 import { useAuth } from "./context/AuthContext";
+import { ContractReviewPage } from "./pages/ContractReviewPage";
 import { ContractsPage } from "./pages/ContractsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
@@ -118,6 +119,7 @@ function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:documentId" element={<DocumentTextPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
+        <Route path="/contracts/:contractId/review" element={<ContractReviewPage />} />
         <Route path="/privacy-security" element={<PrivacySecurityPage />} />
       </Routes>
 

@@ -1038,6 +1038,55 @@ h1 {
 
 /* ── End contract review styles ── */
 
+/* ── Contract review detail page ── */
+
+.review-page {
+  width: min(900px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 52px 0 104px;
+}
+
+.review-page__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 38px;
+}
+
+.review-page__topbar-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.review-page__btn {
+  font-size: 13px;
+  padding: 9px 18px;
+}
+
+.review-page__header {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 52px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid rgb(21 63 51 / 12%);
+}
+
+.review-page__score-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.review-page__body {
+  max-width: 780px;
+}
+
+/* ── End contract review detail page ── */
+
 .trust-page {
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
@@ -1308,6 +1357,41 @@ footer span:first-child {
 
   .security-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media print {
+  .no-print,
+  .site-header,
+  footer {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  .review-page {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .review-page__header {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+  }
+
+  .review-section,
+  .risk-flag,
+  .review-disclaimer {
+    break-inside: avoid;
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
   }
 }
 

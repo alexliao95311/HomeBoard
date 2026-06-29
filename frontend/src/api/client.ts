@@ -167,6 +167,23 @@ export async function reviewContract(
   return response.json() as Promise<ContractWithReview>;
 }
 
+export async function getContract(
+  idToken: string,
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<Contract> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/${contractId}`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load contract"));
+  }
+
+  return response.json() as Promise<Contract>;
+}
+
 export async function listContracts(
   idToken: string,
   signal?: AbortSignal,

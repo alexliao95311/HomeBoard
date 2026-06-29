@@ -5,9 +5,11 @@
 The FastAPI and React/Vite foundation is complete. Docker runs the backend,
 frontend, PostgreSQL, and Redis; Firebase provides Google authentication.
 Authenticated document upload, document listing, text extraction, the
-full contract-review API, AI provider abstraction with OpenRouter, and the
-contract review UI at `/contracts` are implemented.
-The current Alembic revision is `20260628_0002`, and all 22 backend tests pass.
+full contract-review API, AI provider abstraction with OpenRouter, the
+contract review UI at `/contracts`, inline edit/delete of reviews, and a
+dedicated per-review detail page at `/contracts/:id/review` with PDF export
+are implemented. The current Alembic revision is `20260628_0002`, and all
+22 backend tests pass.
 
 ## Start the Project
 
@@ -241,6 +243,25 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
 - [x] Updated the review panel with an "Edit review" toggle that makes
   summary and recommendation textareas, risk level a select, and score a
   number input; changes are saved via PATCH without a page reload.
+
+### 16. Contract Review Detail Page and PDF Export
+
+- [x] Added `GET /api/v1/contracts/{id}` single-contract endpoint (already present
+  from Step 12; added `getContract` client function).
+- [x] Added `frontend/src/pages/ContractReviewPage.tsx` — dedicated full-page
+  review view at `/contracts/:contractId/review`; fetches contract and review in
+  parallel; renders score, risk badge, rubric table, risk flags, and disclaimer.
+- [x] Added route `/contracts/:contractId/review` in `App.tsx`.
+- [x] Added "Open in new tab" (`Link target="_blank"`) and "Export as PDF"
+  (`<a href="...?print=1" target="_blank">`) buttons to the inline `ReviewPanel`
+  header in `ContractsPage.tsx`.
+- [x] "Export as PDF" opens the detail page with `?print=1`, which auto-triggers
+  `window.print()` after data loads (200 ms delay for paint).
+- [x] Added `@media print` CSS: hides site header, footer, and `.no-print`
+  elements; sets white background; adds `break-inside: avoid` on sections and
+  risk flags for clean page breaks.
+- [x] Added `.review-page` layout styles (max-width 900 px, topbar with back link
+  and export button, header with score block, body with 780 px content column).
 
 ## Next Work
 

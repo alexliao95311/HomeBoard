@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   deleteContract,
@@ -199,13 +200,31 @@ function ReviewPanel({
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              className="table-action"
-              onClick={startEditing}
-            >
-              Edit review
-            </button>
+            <>
+              <button
+                type="button"
+                className="table-action"
+                onClick={startEditing}
+              >
+                Edit review
+              </button>
+              <Link
+                className="table-action"
+                to={`/contracts/${review.contract_id}/review`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in new tab
+              </Link>
+              <a
+                className="table-action"
+                href={`/contracts/${review.contract_id}/review?print=1`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Export as PDF
+              </a>
+            </>
           )}
         </div>
       </div>
