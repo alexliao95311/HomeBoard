@@ -4,9 +4,10 @@
 
 The FastAPI and React/Vite foundation is complete. Docker runs the backend,
 frontend, PostgreSQL, and Redis; Firebase provides Google authentication.
-Authenticated document upload, document listing, text extraction, and the
-contract-review database schema are implemented. The current Alembic revision
-is `20260628_0002`, and all 15 backend tests pass.
+Authenticated document upload, document listing, text extraction, the
+full contract-review API with a fake placeholder reviewer, and the contract
+review UI at `/contracts` are implemented.
+The current Alembic revision is `20260628_0002`, and all 22 backend tests pass.
 
 ## Start the Project
 
@@ -164,7 +165,18 @@ document status to `processed` or `failed`.
 - [x] Added and applied Alembic revision `20260628_0002`.
 - [x] Confirmed the PostgreSQL schema has no migration drift.
 
-No contract-review API routes or AI review flow have been added yet.
+### 12. Contract Review API
+
+- [x] Added `POST /api/v1/contracts/review` with document ownership check and
+  processed-status guard.
+- [x] Added `GET /api/v1/contracts`, `GET /api/v1/contracts/{id}`, and
+  `GET /api/v1/contracts/{id}/review`.
+- [x] Added fake placeholder reviewer (score 75, 5 rubric categories, 2 risk
+  flags).
+- [x] Added `app/schemas/contract.py` with request and response Pydantic models.
+- [x] Added 7 new backend tests (22 total).
+- [x] Added `/contracts` React page with document picker, review form, and
+  inline review panel showing score, rubric table, and risk flags.
 
 ## Current Document API
 
@@ -180,9 +192,20 @@ All endpoints require a Firebase bearer token.
 
 The `/api/v1/documents` equivalents are also available.
 
+### 13. Frontend Contract Review UI
+
+- [x] Added `/contracts` route and nav link.
+- [x] Added document picker dropdown filtered to processed documents.
+- [x] Added vendor name and contract type inputs.
+- [x] Calls `POST /api/v1/contracts/review` and displays the result inline.
+- [x] Shows total score, risk level, executive summary, recommendation, rubric
+  table with score bars, and risk flags with severity badges.
+- [x] Lists past contract reviews from `GET /api/v1/contracts` with expandable
+  review panels.
+- [x] Added "Review contracts" link from the dashboard.
+
 ## Next Work
 
-1. Add contract-review API endpoints.
-2. Add the AI contract review and scoring flow.
-3. Decide when to move document binaries from local storage to Firebase Cloud
+1. Replace the fake reviewer with a real AI review flow.
+2. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.

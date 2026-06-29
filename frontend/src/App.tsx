@@ -3,6 +3,7 @@ import { Link, NavLink, Route, Routes } from "react-router-dom";
 
 import { getHealth } from "./api/client";
 import { useAuth } from "./context/AuthContext";
+import { ContractsPage } from "./pages/ContractsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
@@ -45,6 +46,7 @@ function App() {
                 Dashboard
               </NavLink>
               <NavLink to="/documents">Documents</NavLink>
+              <NavLink to="/contracts">Contracts</NavLink>
             </nav>
           ) : null}
           <div className={`api-status api-status--${backendStatus}`}>
@@ -97,6 +99,7 @@ function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:documentId" element={<DocumentTextPage />} />
+        <Route path="/contracts" element={<ContractsPage />} />
       </Routes>
 
       <footer>

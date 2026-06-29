@@ -1,5 +1,9 @@
 import type {
   AuthenticatedUser,
+  Contract,
+  ContractReviewRequest,
+  ContractReview,
+  ContractWithReview,
   Document,
   DocumentProcessResult,
   DocumentTextChunk,
@@ -139,4 +143,60 @@ export async function getDocumentText(
   }
 
   return response.json() as Promise<DocumentTextChunk[]>;
+}
+
+export async function reviewContract(
+  idToken: string,
+  request: ContractReviewRequest,
+): Promise<ContractWithReview> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts/review`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Contract review failed"));
+  }
+
+  return response.json() as Promise<ContractWithReview>;
+}
+
+export async function listContracts(
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<Contract[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/contracts`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load contracts"));
+  }
+
+  return response.json() as Promise<Contract[]>;
+}
+
+export async function getContractReview(
+  idToken: string,
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<ContractReview> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/${contractId}/review`,
+    {
+      headers: { Authorization: `Bearer ${idToken}` },
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load contract review"));
+  }
+
+  return response.json() as Promise<ContractReview>;
 }

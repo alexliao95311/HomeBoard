@@ -48,9 +48,14 @@ export function DashboardPage() {
         </p>
         <div className="hero__actions">
           {user ? (
-            <Link className="button button--primary" to="/documents">
-              Open documents
-            </Link>
+            <>
+              <Link className="button button--primary" to="/documents">
+                Open documents
+              </Link>
+              <Link className="button button--secondary" to="/contracts">
+                Review contracts
+              </Link>
+            </>
           ) : (
             <button
               className="button button--primary"

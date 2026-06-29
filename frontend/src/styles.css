@@ -682,6 +682,263 @@ h1 {
   text-align: center;
 }
 
+/* ── Contract review styles ── */
+
+.upload-form input[type="text"] {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgb(21 63 51 / 20%);
+  border-radius: 7px;
+  color: #25312c;
+  background: #fff;
+  font: inherit;
+}
+
+.field-hint {
+  margin-top: 4px;
+  color: #92702f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.field-optional {
+  color: #92a09b;
+  font-weight: 500;
+}
+
+.inline-link {
+  color: #315f50;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgb(49 95 80 / 35%);
+}
+
+.inline-link:hover {
+  color: #92702f;
+}
+
+.risk-badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.risk-badge--high {
+  color: #8b3c31;
+  background: rgb(184 92 77 / 12%);
+}
+
+.risk-badge--medium {
+  color: #86631e;
+  background: rgb(214 156 53 / 14%);
+}
+
+.risk-badge--low {
+  color: #1f684f;
+  background: rgb(45 147 108 / 12%);
+}
+
+.contract-row:hover td {
+  background: rgb(21 63 51 / 3%);
+}
+
+.contract-row--selected td {
+  background: rgb(21 63 51 / 5%);
+}
+
+.review-cell {
+  padding: 0 !important;
+}
+
+.review-panel {
+  padding: 28px 32px;
+  border-top: 3px solid rgb(21 63 51 / 12%);
+  background: rgb(255 255 255 / 70%);
+}
+
+.review-panel__header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.review-panel__score {
+  display: flex;
+  gap: 3px;
+  align-items: baseline;
+}
+
+.review-panel__score-value {
+  font-family: Georgia, serif;
+  font-size: 52px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #153f33;
+}
+
+.review-panel__score-denom {
+  color: #7a8480;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.review-section {
+  margin-bottom: 32px;
+}
+
+.review-section h3 {
+  margin-bottom: 12px;
+  color: #3b4842;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.review-section p {
+  color: #3d4a44;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.review-recommendation {
+  padding: 16px;
+  border-left: 3px solid #153f33;
+  background: rgb(21 63 51 / 5%);
+  border-radius: 0 6px 6px 0;
+}
+
+.rubric-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rubric-table th {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid rgb(21 63 51 / 12%);
+  color: #737c78;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.rubric-table td {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid rgb(21 63 51 / 7%);
+  vertical-align: top;
+}
+
+.rubric-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rubric-table__num {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rubric-table__bar-col {
+  width: 100px;
+}
+
+.score-bar {
+  width: 100px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(21 63 51 / 12%);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.score-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #2d936c;
+}
+
+.rubric-table__explanation {
+  color: #59635f;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 420px;
+}
+
+.risk-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.risk-flag {
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.risk-flag--high {
+  border-color: rgb(184 92 77 / 20%);
+  background: rgb(184 92 77 / 5%);
+}
+
+.risk-flag--medium {
+  border-color: rgb(214 156 53 / 25%);
+  background: rgb(214 156 53 / 6%);
+}
+
+.risk-flag--low {
+  border-color: rgb(45 147 108 / 20%);
+  background: rgb(45 147 108 / 5%);
+}
+
+.risk-flag__header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.risk-flag__type {
+  font-size: 13px;
+  font-weight: 750;
+  color: #25312c;
+}
+
+.risk-flag__explanation,
+.risk-flag__fix {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #3d4a44;
+}
+
+.risk-flag__fix {
+  margin-bottom: 0;
+}
+
+.review-disclaimer {
+  margin-top: 28px;
+  padding: 12px 16px;
+  border: 1px solid rgb(214 156 53 / 25%);
+  border-radius: 7px;
+  color: #86631e;
+  background: rgb(214 156 53 / 6%);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ── End contract review styles ── */
+
 footer {
   min-height: 88px;
   gap: 24px;
