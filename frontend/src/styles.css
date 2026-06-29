@@ -1502,10 +1502,17 @@ footer span:first-child {
     padding-bottom: 20px;
   }
 
-  .review-section,
-  .risk-flag,
-  .review-disclaimer {
+  .review-page__body,
+  .review-section {
+    break-inside: auto;
+    break-before: auto;
+    page-break-inside: auto;
+    page-break-before: auto;
+  }
+
+  .risk-flag {
     break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   a {
