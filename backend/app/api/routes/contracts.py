@@ -6,6 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.agents.contract_reviewer import (
+    ContractReviewError,
+    ContractReviewResult,
+    run_ai_review,
+    run_fake_review,
+)
+from app.ai.providers.openrouter_provider import OpenRouterProvider
+from app.config import settings
 from app.database import get_database_session
 from app.models.contract import Contract
 from app.models.contract_review import (
@@ -14,6 +22,7 @@ from app.models.contract_review import (
     ContractRubricScore,
 )
 from app.models.document import Document
+from app.models.document_text_chunk import DocumentTextChunk
 from app.schemas.contract import (
     ContractResponse,
     ContractReviewRequest,
@@ -28,66 +37,6 @@ from app.services.organization_service import (
 )
 
 router = APIRouter()
-
-_RUBRIC_ITEMS = [
-    (
-        "Price / Value",
-        "14",
-        "20",
-        "Pricing appears competitive but includes annual escalation clauses "
-        "that could increase costs by up to 5% per year without board approval.",
-    ),
-    (
-        "Scope Clarity",
-        "11",
-        "15",
-        "The scope of work is generally described but lacks specific performance "
-        "standards, response-time guarantees, and measurable service outcomes.",
-    ),
-    (
-        "Term / Cancellation",
-        "10",
-        "15",
-        "The contract requires 90 days written notice to terminate, which limits "
-        "the HOA's ability to respond quickly to poor vendor performance.",
-    ),
-    (
-        "Liability / Insurance",
-        "11",
-        "15",
-        "Vendor carries general liability coverage, but the indemnification clause "
-        "is one-sided and the liability cap is set at one month's service fee.",
-    ),
-    (
-        "Payment Terms",
-        "8",
-        "10",
-        "Payment terms are standard net-30 with a 1.5% monthly late fee. "
-        "No early-payment discounts or disputed-invoice procedures are defined.",
-    ),
-]
-
-_RISK_FLAGS = [
-    (
-        "Excessive Termination Notice",
-        "medium",
-        "The contract requires 90 days written notice to terminate for convenience. "
-        "This significantly limits HOA flexibility to respond to poor vendor performance "
-        "or to change vendors at the end of a budget cycle.",
-        "Negotiate to reduce the termination-for-convenience notice period to 30 days "
-        "and add a 10-day termination-for-cause clause.",
-    ),
-    (
-        "Liability Cap Too Low",
-        "high",
-        "Vendor liability is capped at one month's service fee. This amount is unlikely "
-        "to cover property damage, injury, or significant service failures on HOA common "
-        "areas. The HOA retains substantial uninsured risk.",
-        "Request a higher liability cap equal to the total annual contract value. "
-        "Verify the vendor carries at least $1M general liability and $500K workers' "
-        "compensation coverage and request certificates of insurance.",
-    ),
-]
 
 
 def _get_org_contract(
@@ -132,6 +81,55 @@ def _build_review_response(
     )
 
 
+def _persist_review(
+    session: Session,
+    contract: Contract,
+    result: ContractReviewResult,
+    model_name: str,
+    flow_name: str,
+) -> tuple[ContractReview, list[ContractRubricScore], list[ContractRiskFlag]]:
+    review = ContractReview(
+        contract_id=contract.id,
+        model_name=model_name,
+        flow_name=flow_name,
+        total_score=Decimal(str(result.total_score)),
+        risk_level=result.risk_level,
+        executive_summary=result.executive_summary,
+        recommendation=result.recommendation,
+        raw_output_json=result.model_dump(),
+    )
+    session.add(review)
+    session.flush()
+
+    rubric_scores: list[ContractRubricScore] = []
+    for rs in result.rubric_scores:
+        row = ContractRubricScore(
+            contract_review_id=review.id,
+            category=rs.category,
+            score=Decimal(str(rs.score)),
+            max_score=Decimal(str(rs.max_score)),
+            explanation=rs.explanation,
+            citation=rs.citation,
+        )
+        session.add(row)
+        rubric_scores.append(row)
+
+    risk_flags: list[ContractRiskFlag] = []
+    for rf in result.risk_flags:
+        row = ContractRiskFlag(
+            contract_review_id=review.id,
+            risk_type=rf.risk_type,
+            severity=rf.severity,
+            explanation=rf.explanation,
+            citation=rf.citation,
+            suggested_fix=rf.suggested_fix,
+        )
+        session.add(row)
+        risk_flags.append(row)
+
+    return review, rubric_scores, risk_flags
+
+
 @router.post(
     "/review",
     response_model=ContractWithReviewResponse,
@@ -171,55 +169,43 @@ def create_contract_review(
     session.add(contract)
     session.flush()
 
-    review = ContractReview(
-        contract_id=contract.id,
-        model_name="placeholder",
-        flow_name="fake_reviewer_v1",
-        total_score=Decimal("75"),
-        risk_level="medium",
-        executive_summary=(
-            "This is a placeholder review generated by the fake reviewer. "
-            "The contract appears to be a standard service agreement with moderate risk. "
-            "Key areas requiring board attention include the termination clause, "
-            "the vendor liability cap, and the annual price escalation terms. "
-            "A qualified reviewer should assess all contract terms before the board votes."
-        ),
-        recommendation=(
-            "Conditionally approve pending negotiation of the termination notice period "
-            "and the liability cap. Request updated certificates of insurance before signing. "
-            "This recommendation is a placeholder and must be replaced by a real AI review "
-            "before board use."
-        ),
-        raw_output_json={"mode": "placeholder", "version": "fake_reviewer_v1"},
+    if settings.use_fake_ai:
+        result = run_fake_review()
+        model_name = "placeholder"
+        flow_name = "fake_reviewer_v1"
+    else:
+        if not settings.openrouter_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OPENROUTER_API_KEY is not configured. Set USE_FAKE_AI=true or add the key.",
+            )
+        chunks = list(
+            session.scalars(
+                select(DocumentTextChunk)
+                .where(DocumentTextChunk.document_id == document.id)
+                .order_by(DocumentTextChunk.chunk_index)
+            )
+        )
+        try:
+            result = run_ai_review(
+                text_chunks=[c.text for c in chunks],
+                vendor_name=request.vendor_name,
+                contract_type=request.contract_type,
+                provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+                model=settings.default_model,
+            )
+        except ContractReviewError as exc:
+            session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AI review failed: {exc}",
+            ) from exc
+        model_name = settings.default_model
+        flow_name = "openrouter_v1"
+
+    review, rubric_scores, risk_flags = _persist_review(
+        session, contract, result, model_name, flow_name
     )
-    session.add(review)
-    session.flush()
-
-    rubric_scores: list[ContractRubricScore] = []
-    for category, score, max_score, explanation in _RUBRIC_ITEMS:
-        rs = ContractRubricScore(
-            contract_review_id=review.id,
-            category=category,
-            score=Decimal(score),
-            max_score=Decimal(max_score),
-            explanation=explanation,
-            citation=None,
-        )
-        session.add(rs)
-        rubric_scores.append(rs)
-
-    risk_flags: list[ContractRiskFlag] = []
-    for risk_type, severity, explanation, suggested_fix in _RISK_FLAGS:
-        rf = ContractRiskFlag(
-            contract_review_id=review.id,
-            risk_type=risk_type,
-            severity=severity,
-            explanation=explanation,
-            citation=None,
-            suggested_fix=suggested_fix,
-        )
-        session.add(rf)
-        risk_flags.append(rf)
 
     session.commit()
     session.refresh(contract)

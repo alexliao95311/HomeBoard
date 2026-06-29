@@ -5,8 +5,8 @@
 The FastAPI and React/Vite foundation is complete. Docker runs the backend,
 frontend, PostgreSQL, and Redis; Firebase provides Google authentication.
 Authenticated document upload, document listing, text extraction, the
-full contract-review API with a fake placeholder reviewer, and the contract
-review UI at `/contracts` are implemented.
+full contract-review API, AI provider abstraction with OpenRouter, and the
+contract review UI at `/contracts` are implemented.
 The current Alembic revision is `20260628_0002`, and all 22 backend tests pass.
 
 ## Start the Project
@@ -204,8 +204,27 @@ The `/api/v1/documents` equivalents are also available.
   review panels.
 - [x] Added "Review contracts" link from the dashboard.
 
+### 14. AI Provider Abstraction for Contract Review
+
+- [x] Added `app/ai/providers/base.py` with `AIProvider` ABC (`complete` method).
+- [x] Added `app/ai/providers/openrouter_provider.py` with HTTP error, timeout,
+  and malformed-response handling.
+- [x] Added `app/ai/agents/contract_reviewer.py` with `ContractReviewResult`
+  Pydantic output model, strict JSON-only prompt, and `run_ai_review` /
+  `run_fake_review` functions.
+- [x] Added `USE_FAKE_AI`, `DEFAULT_MODEL`, and `OPENROUTER_API_KEY` to
+  `app/config.py` and `.env`.
+- [x] Updated `POST /api/v1/contracts/review` to branch on `USE_FAKE_AI`;
+  real path calls OpenRouter and returns `502` with a clear message on any
+  AI failure.
+- [x] Moved `httpx` from the dev section to main dependencies in
+  `requirements.txt`.
+- [x] Updated the frontend review panel to show the model name and adjust the
+  disclaimer text for real vs. placeholder reviews.
+
+To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
+
 ## Next Work
 
-1. Replace the fake reviewer with a real AI review flow.
-2. Decide when to move document binaries from local storage to Firebase Cloud
+1. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.

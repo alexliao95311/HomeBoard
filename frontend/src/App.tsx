@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import {
+  Link,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 
 import { getHealth } from "./api/client";
 import { useAuth } from "./context/AuthContext";
@@ -7,8 +13,19 @@ import { ContractsPage } from "./pages/ContractsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
+import { PrivacySecurityPage } from "./pages/PrivacySecurityPage";
 
 type BackendStatus = "checking" | "ok" | "offline";
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname]);
+
+  return null;
+}
 
 function App() {
   const [backendStatus, setBackendStatus] =
@@ -34,6 +51,7 @@ function App() {
 
   return (
     <div className="app-shell">
+      <ScrollToTop />
       <header className="site-header">
         <Link className="brand" to="/" aria-label="HOA AI Assistant dashboard">
           <span className="brand__mark">H</span>
@@ -100,11 +118,15 @@ function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/documents/:documentId" element={<DocumentTextPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
+        <Route path="/privacy-security" element={<PrivacySecurityPage />} />
       </Routes>
 
       <footer>
         <span>HOA AI Assistant</span>
-        <span>Human review required for all AI-generated conclusions.</span>
+        <div className="footer-meta">
+          <span>Human review required for all AI-generated conclusions.</span>
+          <Link to="/privacy-security">Privacy &amp; security</Link>
+        </div>
       </footer>
     </div>
   );
