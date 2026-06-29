@@ -1,1 +1,1 @@
-"""HOA AI Assistant backend package."""
+"""HomeBoard backend package."""

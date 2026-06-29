@@ -54,9 +54,9 @@ function App() {
     <div className="app-shell">
       <ScrollToTop />
       <header className="site-header">
-        <Link className="brand" to="/" aria-label="HOA AI Assistant dashboard">
+        <Link className="brand" to="/" aria-label="HomeBoard dashboard">
           <span className="brand__mark">H</span>
-          <span>HOA AI Assistant</span>
+          <span>HomeBoard</span>
         </Link>
         <div className="header-actions">
           {user ? (
@@ -124,7 +124,7 @@ function App() {
       </Routes>
 
       <footer>
-        <span>HOA AI Assistant</span>
+        <span>HomeBoard</span>
         <div className="footer-meta">
           <span>Human review required for all AI-generated conclusions.</span>
           <Link to="/privacy-security">Privacy &amp; security</Link>

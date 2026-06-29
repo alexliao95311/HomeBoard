@@ -21,7 +21,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     application = FastAPI(
         title=settings.api_title,
-        description="API for HOA document, contract, and financial review workflows.",
+        description=(
+            "HomeBoard helps HOA boards review contracts, monitor finances, "
+            "detect unusual transactions, and generate board-ready reports "
+            "with AI assistance."
+        ),
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",

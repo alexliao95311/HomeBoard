@@ -1,4 +1,4 @@
-"""Development entry point for the HOA AI Assistant API."""
+"""Development entry point for the HomeBoard API."""
 
 from app.main import app
 

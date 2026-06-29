@@ -43,8 +43,9 @@ export function DashboardPage() {
         <p className="eyebrow">Clarity for every board decision</p>
         <h1>Contracts and finances, reviewed with confidence.</h1>
         <p className="hero__copy">
-          A secure workspace for HOA boards to understand vendor agreements,
-          monitor financial activity, and prepare better meetings.
+          HomeBoard helps HOA boards review contracts, monitor finances, detect
+          unusual transactions, and generate board-ready reports with AI
+          assistance.
         </p>
         <div className="hero__actions">
           {user ? (

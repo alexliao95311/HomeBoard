@@ -16,8 +16,8 @@ def _bool_env(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = os.getenv("APP_NAME", "HOA AI Assistant")
-    api_title: str = os.getenv("API_TITLE", "HOA AI Assistant API")
+    app_name: str = os.getenv("APP_NAME", "HomeBoard")
+    api_title: str = os.getenv("API_TITLE", "HomeBoard API")
     environment: str = os.getenv("ENVIRONMENT", "development")
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = field(default_factory=_cors_origins)

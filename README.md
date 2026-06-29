@@ -1,6 +1,6 @@
-# HOA AI Assistant
+# HomeBoard
 
-A secure AI-powered assistant for HOA boards to review vendor contracts, compare proposals, monitor finances, detect abnormal transactions, and generate board-ready reports.
+HomeBoard helps HOA boards review contracts, monitor finances, detect unusual transactions, and generate board-ready reports with AI assistance.
 
 This project is designed for HOA board members, treasurers, and property managers who need a more organized way to review documents, understand financial activity, and prepare materials for board meetings.
 
@@ -8,7 +8,7 @@ This project is designed for HOA board members, treasurers, and property manager
 
 HOA boards often deal with large amounts of paperwork: vendor contracts, proposals, bank statements, invoices, budgets, delinquency reports, reserve studies, and monthly financial packets. Reviewing all of this manually is slow and error-prone.
 
-The HOA AI Assistant helps by:
+HomeBoard helps by:
 
 - Uploading and organizing HOA documents
 - Extracting text from contracts and financial files
@@ -498,7 +498,7 @@ Services:
 ## Planned Project Structure
 
 ```text
-hoa-ai-assistant/
+homeboard/
   backend/
     app/
       main.py

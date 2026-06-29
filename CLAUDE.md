@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HOA AI Assistant — a secure, AI-powered tool for HOA boards to upload documents, extract text, review contracts, monitor finances, and generate board-ready reports. Currently in Phase 2 (Document System); Phase 3 (Contract Review) is next.
+HomeBoard helps HOA boards review contracts, monitor finances, detect unusual
+transactions, and generate board-ready reports with AI assistance.
 
 ## Development Commands
 

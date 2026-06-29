@@ -1,4 +1,4 @@
-# HOA AI Assistant — Build Notes
+# HomeBoard — Build Notes
 
 ## Short Progress Report
 
