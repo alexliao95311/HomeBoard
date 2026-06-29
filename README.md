@@ -750,7 +750,8 @@ Open `http://localhost:5173`. FastAPI documentation is available at
 
 After signing in with Google, open `http://localhost:5173/documents` to upload
 PDF, CSV, DOCX, or XLSX files and view the current organization's document
-list. The dashboard includes a direct link to this workspace.
+list. Select a document to process it and inspect the extracted text chunks.
+The dashboard includes a direct link to this workspace.
 
 ### Docker Compose
 
@@ -799,6 +800,8 @@ All document endpoints require a Firebase ID token in the
 | `POST` | `/documents/upload` | Upload a document and create its metadata |
 | `GET` | `/documents` | List documents in the current organization |
 | `GET` | `/documents/{id}` | Get organization-scoped document metadata |
+| `POST` | `/documents/{id}/process` | Extract and chunk document text |
+| `GET` | `/documents/{id}/text` | Return extracted text chunks in order |
 
 The versioned `/api/v1/documents` equivalents are also available. Uploads use
 `multipart/form-data` with a `file` field and a user-provided `document_type`
@@ -809,7 +812,20 @@ Files are stored under
 `backend/storage/uploads/{organization_id}/{document_id}_{safe_filename}`.
 The backend computes a SHA-256 hash, creates the `Document` row with status
 `uploaded`, and records a `document.uploaded` audit event in the same database
-transaction. No document text is processed yet.
+transaction.
+
+Processing extracts PDF text by page with PyMuPDF, DOCX paragraphs and tables
+with python-docx, CSV rows as a table preview, and XLSX sheets/cells with
+openpyxl. Text is split into roughly 1,500–2,500 character chunks. Successful
+documents receive status `processed`; extraction errors set status `failed`
+and can be retried from the frontend.
+
+Docker runs `alembic upgrade head` before starting FastAPI. For local backend
+development outside Docker, apply migrations from `backend/` with:
+
+```bash
+alembic upgrade head
+```
 
 For the MVP, a user's first document request provisions a private default
 organization and an admin membership. Explicit organization creation,

@@ -5,6 +5,7 @@ import { getHealth } from "./api/client";
 import { useAuth } from "./context/AuthContext";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
+import { DocumentTextPage } from "./pages/DocumentTextPage";
 
 type BackendStatus = "checking" | "ok" | "offline";
 
@@ -95,6 +96,7 @@ function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/documents/:documentId" element={<DocumentTextPage />} />
       </Routes>
 
       <footer>

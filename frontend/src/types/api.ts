@@ -29,3 +29,18 @@ export interface Document {
   sha256: string;
   created_at: string;
 }
+
+export interface DocumentTextChunk {
+  id: string;
+  document_id: string;
+  page_number: number | null;
+  chunk_index: number;
+  text: string;
+  created_at: string;
+}
+
+export interface DocumentProcessResult {
+  document_id: string;
+  status: string;
+  chunk_count: number;
+}

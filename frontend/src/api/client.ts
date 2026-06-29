@@ -1,6 +1,8 @@
 import type {
   AuthenticatedUser,
   Document,
+  DocumentProcessResult,
+  DocumentTextChunk,
   DocumentType,
   HealthResponse,
 } from "../types/api";
@@ -81,4 +83,60 @@ export async function listDocuments(
   }
 
   return response.json() as Promise<Document[]>;
+}
+
+export async function getDocument(
+  idToken: string,
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<Document> {
+  const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load document"));
+  }
+
+  return response.json() as Promise<Document>;
+}
+
+export async function processDocument(
+  idToken: string,
+  documentId: string,
+): Promise<DocumentProcessResult> {
+  const response = await fetch(
+    `${API_BASE_URL}/documents/${documentId}/process`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Document processing failed"));
+  }
+
+  return response.json() as Promise<DocumentProcessResult>;
+}
+
+export async function getDocumentText(
+  idToken: string,
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<DocumentTextChunk[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/documents/${documentId}/text`,
+    {
+      headers: { Authorization: `Bearer ${idToken}` },
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load document text"));
+  }
+
+  return response.json() as Promise<DocumentTextChunk[]>;
 }

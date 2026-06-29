@@ -551,6 +551,10 @@ h1 {
   white-space: nowrap;
 }
 
+.document-name--link:hover {
+  color: #92702f;
+}
+
 .document-hash {
   margin-top: 4px;
   color: #87908c;
@@ -571,6 +575,103 @@ h1 {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.status-pill--failed {
+  color: #8b3c31;
+  background: rgb(184 92 77 / 11%);
+}
+
+.status-pill--processing {
+  color: #86631e;
+  background: rgb(214 156 53 / 13%);
+}
+
+.table-action,
+.back-link {
+  color: #315f50;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.table-action {
+  white-space: nowrap;
+}
+
+.table-action:hover,
+.back-link:hover {
+  color: #92702f;
+}
+
+.back-link {
+  display: inline-flex;
+  margin-bottom: 38px;
+}
+
+.document-detail-heading {
+  display: flex;
+  gap: 40px;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 42px;
+}
+
+.detail-title {
+  max-width: 780px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(36px, 5vw, 58px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.document-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  color: #737d78;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.text-chunks {
+  margin-top: 42px;
+}
+
+.text-chunk {
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid rgb(21 63 51 / 12%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 58%);
+}
+
+.text-chunk header {
+  display: flex;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgb(21 63 51 / 9%);
+  color: #68736e;
+  background: rgb(21 63 51 / 3%);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.text-chunk pre {
+  margin: 0;
+  padding: 20px;
+  overflow-x: auto;
+  color: #313d38;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .empty-state {
@@ -619,6 +720,11 @@ footer span:first-child {
 
   .upload-form .button {
     grid-column: 1 / -1;
+  }
+
+  .document-detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

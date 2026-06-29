@@ -3,6 +3,7 @@ from pathlib import Path
 import uuid
 
 from fastapi.testclient import TestClient
+import fitz
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,6 +15,7 @@ from app.database import Base, get_database_session
 from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.document import Document
+from app.models.document_text_chunk import DocumentTextChunk
 from app.schemas.auth import AuthenticatedUser
 
 
@@ -149,3 +151,85 @@ def test_upload_rejects_file_above_size_limit(
     assert list(upload_root.rglob("*")) == []
     with test_session() as session:
         assert session.scalar(select(func.count()).select_from(Document)) == 0
+
+
+def test_process_pdf_and_return_text_chunks(document_client) -> None:
+    client, test_session, _ = document_client
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text(
+        (72, 72),
+        "HOA landscaping contract with monthly service and termination terms.",
+    )
+    pdf_bytes = pdf.tobytes()
+    pdf.close()
+
+    upload_response = client.post(
+        "/documents/upload",
+        data={"document_type": "contract"},
+        files={"file": ("sample.pdf", pdf_bytes, "application/pdf")},
+    )
+    document_id = upload_response.json()["id"]
+
+    process_response = client.post(f"/documents/{document_id}/process")
+    assert process_response.status_code == 200
+    assert process_response.json() == {
+        "document_id": document_id,
+        "status": "processed",
+        "chunk_count": 1,
+    }
+
+    text_response = client.get(f"/documents/{document_id}/text")
+    assert text_response.status_code == 200
+    chunks = text_response.json()
+    assert len(chunks) == 1
+    assert chunks[0]["page_number"] == 1
+    assert chunks[0]["chunk_index"] == 0
+    assert "landscaping contract" in chunks[0]["text"]
+
+    metadata_response = client.get(f"/documents/{document_id}")
+    assert metadata_response.json()["status"] == "processed"
+
+    with test_session() as session:
+        assert (
+            session.scalar(select(func.count()).select_from(DocumentTextChunk)) == 1
+        )
+        actions = list(session.scalars(select(AuditLog.action).order_by(AuditLog.action)))
+        assert actions == ["document.processed", "document.uploaded"]
+
+
+def test_processing_failure_sets_failed_status(document_client) -> None:
+    client, _, _ = document_client
+    upload_response = client.post(
+        "/documents/upload",
+        data={"document_type": "contract"},
+        files={"file": ("broken.pdf", b"not a pdf", "application/pdf")},
+    )
+    document_id = upload_response.json()["id"]
+
+    process_response = client.post(f"/documents/{document_id}/process")
+
+    assert process_response.status_code == 422
+    assert client.get(f"/documents/{document_id}").json()["status"] == "failed"
+    assert client.get(f"/documents/{document_id}/text").json() == []
+
+
+def test_document_text_is_organization_scoped(document_client) -> None:
+    client, _, _ = document_client
+    upload_response = client.post(
+        "/documents/upload",
+        data={"document_type": "budget"},
+        files={"file": ("budget.csv", b"category,amount\nWater,100", "text/csv")},
+    )
+    document_id = upload_response.json()["id"]
+    assert client.post(f"/documents/{document_id}/process").status_code == 200
+
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        uid="firebase-user-two",
+        email="other@example.com",
+        name="Other Board",
+        email_verified=True,
+    )
+
+    assert client.get(f"/documents/{document_id}/text").status_code == 404
+    assert client.post(f"/documents/{document_id}/process").status_code == 404

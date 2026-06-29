@@ -17,3 +17,20 @@ class DocumentResponse(BaseModel):
     size_bytes: int
     sha256: str
     created_at: datetime
+
+
+class DocumentTextChunkResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    page_number: int | None
+    chunk_index: int
+    text: str
+    created_at: datetime
+
+
+class DocumentProcessResponse(BaseModel):
+    document_id: uuid.UUID
+    status: str
+    chunk_count: int

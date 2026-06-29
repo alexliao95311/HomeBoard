@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from pathlib import Path
 import re
 from typing import Annotated
@@ -14,21 +15,32 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_database_session
 from app.models.audit_log import AuditLog
 from app.models.document import Document
-from app.schemas.document import DocumentResponse
+from app.models.document_text_chunk import DocumentTextChunk
+from app.schemas.document import (
+    DocumentProcessResponse,
+    DocumentResponse,
+    DocumentTextChunkResponse,
+)
 from app.schemas.module import ModuleStatus
 from app.services.organization_service import (
     OrganizationContext,
     get_current_organization,
 )
+from app.services.text_extraction_service import (
+    DocumentExtractionError,
+    chunk_extracted_text,
+    extract_document_text,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 25 * 1024 * 1024
 READ_CHUNK_SIZE = 1024 * 1024
@@ -53,6 +65,25 @@ def safe_filename(filename: str) -> str:
     )
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", normalized).strip("._")
     return (cleaned or "upload")[:255]
+
+
+def _get_organization_document(
+    session: Session,
+    document_id: uuid.UUID,
+    organization_id: uuid.UUID,
+) -> Document:
+    document = session.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.organization_id == organization_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+    return document
 
 
 @router.get("/status", response_model=ModuleStatus)
@@ -181,6 +212,126 @@ async def list_documents(
     )
 
 
+@router.post(
+    "/{document_id}/process",
+    response_model=DocumentProcessResponse,
+)
+def process_document(
+    document_id: uuid.UUID,
+    organization: Annotated[
+        OrganizationContext, Depends(get_current_organization)
+    ],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> DocumentProcessResponse:
+    document = _get_organization_document(
+        session,
+        document_id,
+        organization.organization_id,
+    )
+    document.status = "processing"
+    session.commit()
+
+    try:
+        storage_path = Path(document.storage_path)
+        if not storage_path.is_file():
+            raise DocumentExtractionError("The uploaded file is missing")
+
+        extracted_chunks = chunk_extracted_text(
+            extract_document_text(storage_path, document.content_type)
+        )
+        session.execute(
+            delete(DocumentTextChunk).where(
+                DocumentTextChunk.document_id == document.id
+            )
+        )
+        for chunk in extracted_chunks:
+            session.add(
+                DocumentTextChunk(
+                    document_id=document.id,
+                    page_number=chunk.page_number,
+                    chunk_index=chunk.chunk_index,
+                    text=chunk.text,
+                )
+            )
+
+        document.status = "processed"
+        session.add(
+            AuditLog(
+                organization_id=organization.organization_id,
+                actor_user_id=organization.user_id,
+                action="document.processed",
+                resource_type="document",
+                resource_id=str(document.id),
+                event_data={"chunk_count": len(extracted_chunks)},
+            )
+        )
+        session.commit()
+        return DocumentProcessResponse(
+            document_id=document.id,
+            status=document.status,
+            chunk_count=len(extracted_chunks),
+        )
+    except Exception as error:
+        session.rollback()
+        failed_document = _get_organization_document(
+            session,
+            document_id,
+            organization.organization_id,
+        )
+        session.execute(
+            delete(DocumentTextChunk).where(
+                DocumentTextChunk.document_id == failed_document.id
+            )
+        )
+        failed_document.status = "failed"
+        session.add(
+            AuditLog(
+                organization_id=organization.organization_id,
+                actor_user_id=organization.user_id,
+                action="document.processing_failed",
+                resource_type="document",
+                resource_id=str(failed_document.id),
+                event_data={"error_type": type(error).__name__},
+            )
+        )
+        session.commit()
+        logger.exception("Document processing failed for %s", document_id)
+        detail = (
+            str(error)
+            if isinstance(error, DocumentExtractionError)
+            else "Document processing failed"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=detail,
+        ) from error
+
+
+@router.get(
+    "/{document_id}/text",
+    response_model=list[DocumentTextChunkResponse],
+)
+def get_document_text(
+    document_id: uuid.UUID,
+    organization: Annotated[
+        OrganizationContext, Depends(get_current_organization)
+    ],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> list[DocumentTextChunk]:
+    document = _get_organization_document(
+        session,
+        document_id,
+        organization.organization_id,
+    )
+    return list(
+        session.scalars(
+            select(DocumentTextChunk)
+            .where(DocumentTextChunk.document_id == document.id)
+            .order_by(DocumentTextChunk.chunk_index)
+        )
+    )
+
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: uuid.UUID,
@@ -189,15 +340,8 @@ async def get_document(
     ],
     session: Annotated[Session, Depends(get_database_session)],
 ) -> Document:
-    document = session.scalar(
-        select(Document).where(
-            Document.id == document_id,
-            Document.organization_id == organization.organization_id,
-        )
+    return _get_organization_document(
+        session,
+        document_id,
+        organization.organization_id,
     )
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    return document

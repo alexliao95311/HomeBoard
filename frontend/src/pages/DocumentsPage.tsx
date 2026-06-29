@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 
 import { listDocuments, uploadDocument } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -204,15 +205,19 @@ export function DocumentsPage() {
                   <th>Size</th>
                   <th>Status</th>
                   <th>Uploaded</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {documents.map((document) => (
                   <tr key={document.id}>
                     <td>
-                      <span className="document-name">
+                      <Link
+                        className="document-name document-name--link"
+                        to={`/documents/${document.id}`}
+                      >
                         {document.original_filename}
-                      </span>
+                      </Link>
                       <span className="document-hash">
                         SHA-256 {document.sha256.slice(0, 12)}…
                       </span>
@@ -229,6 +234,16 @@ export function DocumentsPage() {
                         dateStyle: "medium",
                         timeStyle: "short",
                       }).format(new Date(document.created_at))}
+                    </td>
+                    <td>
+                      <Link
+                        className="table-action"
+                        to={`/documents/${document.id}`}
+                      >
+                        {document.status === "processed"
+                          ? "View text"
+                          : "Process"}
+                      </Link>
                     </td>
                   </tr>
                 ))}
