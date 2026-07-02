@@ -33,6 +33,9 @@ _SYSTEM_PROMPT = (
     "context) so the board can compare true cost of ownership, not just the base fee.\n"
     "- Flag any contract that obscures its variable fees or buries them in schedules or "
     "exhibits as a transparency risk. "
+    "When writing markdown inside JSON fields, use bullet points and ## headings only. "
+    "Never use markdown tables or | characters — all comparisons must be written as "
+    "bullet-pointed lists, with one contract per bullet or one item per bullet. "
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."
@@ -46,7 +49,7 @@ Each contract includes its full text and its AI-generated rubric scores.
 
 Return a JSON object with exactly these fields:
 {{
-  "summary": "<Board-ready markdown comparison. Use ## headings. Include exactly these sections: ## Recommendation (which contract the board should favor and the single most important reason why); ## Fee Structure Comparison (compare ALL fee components side by side for every contract — base/retainer fee, per-project or per-incident charges, percentage-of-cost or percentage-of-claim surcharges, invoice markups, and add-on fees; estimate total annual cost for each contract under a realistic scenario with 2–3 typical projects; explicitly flag any percentage-based billing as a conflict of interest and state the preferred hourly/time-based alternative); ## Risk and Liability Comparison (liability caps, insurance requirements, indemnification); ## Key Term Differences (cancellation notice, scope clarity, vendor obligations); ## Recommended Action (a concrete next step for the board — which contract to select or what to negotiate before selecting). Do not include an AI disclaimer in this field.>",
+  "summary": "<Board-ready markdown comparison. Use ## headings and bullet points only — do NOT use markdown tables or any grid/tabular formatting anywhere. Include exactly these sections: ## Recommendation (which contract the board should favor and the single most important reason why); ## Fee Structure (for each contract, list every fee component as bullets — base/retainer fee, per-project or per-incident charges, percentage-of-cost or percentage-of-claim surcharges, invoice markups, and add-on fees; estimate total annual cost for each contract under a realistic scenario with 2–3 typical projects; explicitly flag any percentage-based billing as a conflict of interest and state the preferred hourly/time-based alternative); ## Risk and Liability (for each contract, bullet the liability caps, insurance requirements, and indemnification terms); ## Key Term Differences (bullet the most important differences across contracts — cancellation notice, scope clarity, vendor obligations); ## Recommended Action (a concrete next step for the board — which contract to select or what to negotiate before selecting). Do not include an AI disclaimer in this field. Never use | characters or markdown table syntax.>",
   "per_contract": [
     {{
       "contract_id": "<exact UUID string as provided>",

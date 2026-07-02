@@ -16,6 +16,8 @@ import type {
   DocumentUpdateRequest,
   HealthResponse,
   ShareResponse,
+  UserSettings,
+  UserSettingsUpdateRequest,
 } from "../types/api";
 
 const API_BASE_URL = (
@@ -454,4 +456,36 @@ export async function getSharedComparison(
   }
 
   return response.json() as Promise<ContractCompareResponse>;
+}
+
+export async function getUserSettings(idToken: string): Promise<UserSettings> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load settings"));
+  }
+
+  return response.json() as Promise<UserSettings>;
+}
+
+export async function updateUserSettings(
+  idToken: string,
+  request: UserSettingsUpdateRequest,
+): Promise<UserSettings> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/settings`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not update settings"));
+  }
+
+  return response.json() as Promise<UserSettings>;
 }

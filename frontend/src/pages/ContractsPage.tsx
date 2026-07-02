@@ -2,6 +2,7 @@ import { type FormEvent, Fragment, useCallback, useEffect, useState } from "reac
 import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link } from "react-router-dom";
 
+import { copyToClipboard } from "../utils/clipboard";
 import {
   deleteComparison,
   deleteContract,
@@ -119,7 +120,7 @@ function ReviewPanel({
     try {
       const token = await getIdToken();
       const { token: shareToken } = await shareReview(token, review.contract_id);
-      await navigator.clipboard.writeText(`${window.location.origin}/shared/review/${shareToken}`);
+      await copyToClipboard(`${window.location.origin}/shared/review/${shareToken}`);
       setShareLabel("Copied!");
       setTimeout(() => setShareLabel("Share"), 2000);
     } catch {

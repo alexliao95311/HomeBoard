@@ -3,6 +3,7 @@ import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { getContract, getContractReview, shareReview } from "../api/client";
+import { copyToClipboard } from "../utils/clipboard";
 import { useAuth } from "../context/AuthContext";
 import type {
   BoardQuestion,
@@ -171,7 +172,7 @@ export function ContractReviewPage() {
     try {
       const idToken = await getIdToken();
       const { token } = await shareReview(idToken, contract!.id);
-      await navigator.clipboard.writeText(`${window.location.origin}/shared/review/${token}`);
+      await copyToClipboard(`${window.location.origin}/shared/review/${token}`);
       setShareLabel("Link copied!");
       setTimeout(() => setShareLabel("Share"), 2500);
     } catch {

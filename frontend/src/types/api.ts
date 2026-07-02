@@ -177,3 +177,18 @@ export interface ContractComparisonListItem {
 export interface ShareResponse {
   token: string;
 }
+
+export interface UserSettings {
+  preferred_model: string;
+}
+
+export interface UserSettingsUpdateRequest {
+  preferred_model: string;
+}
+
+export const AI_MODELS = [
+  { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
+  { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", provider: "Anthropic" },
+  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "Google" },
+  { id: "x-ai/grok-4.3", label: "Grok 4.3", provider: "xAI" },
+] as const;

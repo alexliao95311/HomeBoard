@@ -3,6 +3,7 @@ import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { compareContracts, getComparison, listContracts, shareComparison } from "../api/client";
+import { copyToClipboard } from "../utils/clipboard";
 import { useAuth } from "../context/AuthContext";
 import type {
   AiPerContractNote,
@@ -183,20 +184,22 @@ function CompareResults({
     <div className="compare-results">
       <div className="compare-results__topbar no-print">
         <p className="compare-results__contracts">{vendorNames}</p>
-        <button
-          type="button"
-          className="button button--secondary review-page__btn"
-          onClick={() => void handleShare()}
-        >
-          {shareLabel}
-        </button>
-        <button
-          type="button"
-          className="button button--secondary review-page__btn"
-          onClick={() => window.print()}
-        >
-          Export as PDF
-        </button>
+        <div className="review-page__topbar-actions">
+          <button
+            type="button"
+            className="button button--secondary review-page__btn"
+            onClick={() => void handleShare()}
+          >
+            {shareLabel}
+          </button>
+          <button
+            type="button"
+            className="button button--secondary review-page__btn"
+            onClick={() => window.print()}
+          >
+            Export as PDF
+          </button>
+        </div>
       </div>
 
       <div className="compare-print-header">
@@ -408,7 +411,7 @@ export function ContractComparePage() {
             onShare={async () => {
               const idToken = await getIdToken();
               const { token } = await shareComparison(idToken, result.comparison_id);
-              await navigator.clipboard.writeText(
+              await copyToClipboard(
                 `${window.location.origin}/shared/comparison/${token}`,
               );
             }}

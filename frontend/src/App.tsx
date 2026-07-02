@@ -15,6 +15,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
 import { PrivacySecurityPage } from "./pages/PrivacySecurityPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { SharedComparisonPage } from "./pages/SharedComparisonPage";
 import { SharedReviewPage } from "./pages/SharedReviewPage";
 
@@ -53,6 +54,7 @@ function App() {
               </NavLink>
               <NavLink to="/documents">Documents</NavLink>
               <NavLink to="/contracts">Contracts</NavLink>
+              <NavLink to="/settings">Settings</NavLink>
             </nav>
           ) : null}
           {authLoading ? (
@@ -67,9 +69,6 @@ function App() {
                   referrerPolicy="no-referrer"
                 />
               ) : null}
-              <span className="account__name">
-                {user.name ?? user.email ?? "Signed in"}
-              </span>
               <button
                 className="auth-button auth-button--quiet"
                 type="button"
@@ -107,6 +106,7 @@ function App() {
         <Route path="/shared/review/:token" element={<SharedReviewPage />} />
         <Route path="/shared/comparison/:token" element={<SharedComparisonPage />} />
         <Route path="/privacy-security" element={<PrivacySecurityPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
 
       <footer>

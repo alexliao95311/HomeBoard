@@ -46,12 +46,20 @@ from app.schemas.contract import (
     ShareResponse,
     SideBySideRow,
 )
+from app.models.user import User
 from app.services.organization_service import (
     OrganizationContext,
     get_current_organization,
 )
 
 router = APIRouter()
+
+
+def _preferred_model(session: Session, user_id: uuid.UUID) -> str:
+    user = session.scalar(select(User).where(User.id == user_id))
+    if user and user.preferred_model:
+        return user.preferred_model
+    return settings.default_model
 
 
 def _get_org_contract(
@@ -204,13 +212,14 @@ def create_contract_review(
                 .order_by(DocumentTextChunk.chunk_index)
             )
         )
+        chosen_model = _preferred_model(session, organization.user_id)
         try:
             result = run_ai_review(
                 text_chunks=[c.text for c in chunks],
                 vendor_name=request.vendor_name,
                 contract_type=request.contract_type,
                 provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-                model=settings.default_model,
+                model=chosen_model,
             )
         except ContractReviewError as exc:
             session.rollback()
@@ -218,7 +227,7 @@ def create_contract_review(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"AI review failed: {exc}",
             ) from exc
-        model_name = settings.default_model
+        model_name = chosen_model
         flow_name = "openrouter_v1"
 
     review, rubric_scores, risk_flags = _persist_review(
@@ -313,18 +322,19 @@ def compare_contracts(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="OPENROUTER_API_KEY is not configured. Set USE_FAKE_AI=true or add the key.",
             )
+        chosen_model = _preferred_model(session, organization.user_id)
         try:
             ai_result = run_ai_comparison(
                 contracts_info,
                 provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-                model=settings.default_model,
+                model=chosen_model,
             )
         except ContractComparisonError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"AI comparison failed: {exc}",
             ) from exc
-        ai_model = settings.default_model
+        ai_model = chosen_model
 
     # Code-based ranking
     sorted_contracts = sorted(
