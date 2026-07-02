@@ -165,6 +165,8 @@ function CompareResults({
     setTimeout(() => setShareLabel("Share"), 2500);
   }
 
+  const newTabUrl = `/contracts/compare?saved=${result.comparison_id}`;
+
   function vendorOf(contractId: string) {
     return (
       contracts.find((c) => c.id === contractId)?.vendor_name ??
@@ -192,6 +194,14 @@ function CompareResults({
           >
             {shareLabel}
           </button>
+          <Link
+            className="button button--secondary review-page__btn"
+            to={newTabUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in new tab
+          </Link>
           <button
             type="button"
             className="button button--secondary review-page__btn"
@@ -512,7 +522,7 @@ export function ContractComparePage() {
           onShare={async () => {
             const idToken = await getIdToken();
             const { token } = await shareComparison(idToken, result.comparison_id);
-            await navigator.clipboard.writeText(
+            await copyToClipboard(
               `${window.location.origin}/shared/comparison/${token}`,
             );
           }}

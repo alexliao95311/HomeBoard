@@ -815,6 +815,14 @@ export function ContractsPage() {
                         >
                           View
                         </Link>
+                        <Link
+                          className="table-action"
+                          to={`/contracts/compare?saved=${cmp.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open in new tab
+                        </Link>
                         <button
                           type="button"
                           className="table-action table-action--danger"
