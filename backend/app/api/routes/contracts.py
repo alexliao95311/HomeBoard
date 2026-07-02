@@ -43,6 +43,7 @@ from app.schemas.contract import (
     ContractUpdateRequest,
     ContractWithReviewResponse,
     RankedContract,
+    ShareResponse,
     SideBySideRow,
 )
 from app.services.organization_service import (
@@ -441,6 +442,27 @@ def compare_contracts(
     return response
 
 
+@router.post("/comparisons/{comparison_id}/share", response_model=ShareResponse)
+def share_comparison(
+    comparison_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ShareResponse:
+    row = session.scalar(
+        select(ContractComparison).where(
+            ContractComparison.id == comparison_id,
+            ContractComparison.organization_id == organization.organization_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comparison not found")
+    if row.share_token is None:
+        row.share_token = uuid.uuid4()
+        session.commit()
+        session.refresh(row)
+    return ShareResponse(token=str(row.share_token))
+
+
 @router.get("/comparisons", response_model=list[ContractComparisonListItem])
 def list_comparisons(
     organization: Annotated[OrganizationContext, Depends(get_current_organization)],
@@ -515,6 +537,27 @@ def list_contracts(
             .order_by(Contract.created_at.desc())
         )
     )
+
+
+@router.post("/{contract_id}/review/share", response_model=ShareResponse)
+def share_contract_review(
+    contract_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ShareResponse:
+    _get_org_contract(session, contract_id, organization.organization_id)
+    review = session.scalar(
+        select(ContractReview)
+        .where(ContractReview.contract_id == contract_id)
+        .order_by(ContractReview.created_at.desc())
+    )
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No review found")
+    if review.share_token is None:
+        review.share_token = uuid.uuid4()
+        session.commit()
+        session.refresh(review)
+    return ShareResponse(token=str(review.share_token))
 
 
 @router.get("/{contract_id}", response_model=ContractResponse)

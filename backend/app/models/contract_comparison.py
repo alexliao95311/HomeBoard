@@ -20,6 +20,7 @@ class ContractComparison(Base):
     ai_model: Mapped[str] = mapped_column(String(128))
     best_overall_vendor: Mapped[str | None] = mapped_column(String(255), nullable=True)
     result_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    share_token: Mapped[uuid.UUID | None] = mapped_column(unique=True, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

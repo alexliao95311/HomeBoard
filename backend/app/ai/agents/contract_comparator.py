@@ -15,6 +15,24 @@ _SYSTEM_PROMPT = (
     "Do not invent facts. "
     "When writing monetary amounts, never use the $ symbol — write the number only "
     "(e.g. write '3,550' not '$3,550'). "
+    "\n\n"
+    "CRITICAL — HOA FEE STRUCTURE AWARENESS: "
+    "Never compare contracts based on headline monthly fees alone. The true cost of an HOA "
+    "management or service contract is the SUM of all fee components: base retainer, "
+    "per-project charges, percentage-of-cost surcharges, percentage-of-claim fees, invoice "
+    "markups, and add-on service fees. A vendor with a low monthly retainer but 8% project "
+    "oversight fees can easily cost the HOA 2–3x more than a vendor with a higher flat fee. "
+    "When comparing contracts, always:\n"
+    "- Identify and compare every fee component across all contracts side by side.\n"
+    "- Explicitly call out any percentage-of-project or percentage-of-claim billing as "
+    "HIGH RISK — the HOA's preferred model is HOURLY billing for actual work performed. "
+    "Percentage billing creates a direct conflict of interest: the vendor profits more when "
+    "projects cost more, which is fundamentally unfair to the HOA.\n"
+    "- Estimate the total annual cost for each contract under realistic scenarios "
+    "(e.g. assume 2–3 typical projects per year with realistic project sizes for the HOA's "
+    "context) so the board can compare true cost of ownership, not just the base fee.\n"
+    "- Flag any contract that obscures its variable fees or buries them in schedules or "
+    "exhibits as a transparency risk. "
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."
@@ -28,17 +46,17 @@ Each contract includes its full text and its AI-generated rubric scores.
 
 Return a JSON object with exactly these fields:
 {{
-  "summary": "<Board-ready markdown comparison. Use ## headings. Start with a clear recommendation: which contract the board should favor and why. Then cover: (1) Price and value comparison across all contracts; (2) Risk and liability comparison; (3) Key term differences (cancellation, insurance, scope, obligations). End with a concrete action the board should take. 4–6 paragraphs total. Do not include an AI disclaimer in this field.>",
+  "summary": "<Board-ready markdown comparison. Use ## headings. Include exactly these sections: ## Recommendation (which contract the board should favor and the single most important reason why); ## Fee Structure Comparison (compare ALL fee components side by side for every contract — base/retainer fee, per-project or per-incident charges, percentage-of-cost or percentage-of-claim surcharges, invoice markups, and add-on fees; estimate total annual cost for each contract under a realistic scenario with 2–3 typical projects; explicitly flag any percentage-based billing as a conflict of interest and state the preferred hourly/time-based alternative); ## Risk and Liability Comparison (liability caps, insurance requirements, indemnification); ## Key Term Differences (cancellation notice, scope clarity, vendor obligations); ## Recommended Action (a concrete next step for the board — which contract to select or what to negotiate before selecting). Do not include an AI disclaimer in this field.>",
   "per_contract": [
     {{
       "contract_id": "<exact UUID string as provided>",
       "strengths": ["<specific strength drawn from the contract text, max 3>"],
-      "weaknesses": ["<specific weakness drawn from the contract text, max 3>"],
-      "verdict": "<one-sentence board-facing verdict for this specific contract>"
+      "weaknesses": ["<specific weakness drawn from the contract text, max 3 — always include fee structure concerns if percentage billing is present>"],
+      "verdict": "<one-sentence board-facing verdict for this specific contract, including a total cost estimate if percentage fees are present>"
     }}
   ],
   "critical_differences": [
-    "<the most important difference between the contracts that the board must understand before deciding, drawn from the contract texts — max 4 items>"
+    "<the most important difference between the contracts that the board must understand before deciding — always lead with fee structure differences if any contract uses percentage billing; drawn from the contract texts — max 4 items>"
   ]
 }}
 

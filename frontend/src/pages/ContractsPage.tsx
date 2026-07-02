@@ -10,6 +10,7 @@ import {
   listContracts,
   listDocuments,
   reviewContract,
+  shareReview,
   updateContract,
   updateContractReview,
 } from "../api/client";
@@ -112,6 +113,20 @@ function ReviewPanel({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [shareLabel, setShareLabel] = useState("Share");
+
+  async function handleShare() {
+    try {
+      const token = await getIdToken();
+      const { token: shareToken } = await shareReview(token, review.contract_id);
+      await navigator.clipboard.writeText(`${window.location.origin}/shared/review/${shareToken}`);
+      setShareLabel("Copied!");
+      setTimeout(() => setShareLabel("Share"), 2000);
+    } catch {
+      setShareLabel("Error");
+      setTimeout(() => setShareLabel("Share"), 2000);
+    }
+  }
 
   const [editSummary, setEditSummary] = useState("");
   const [editRecommendation, setEditRecommendation] = useState("");
@@ -219,6 +234,13 @@ function ReviewPanel({
                 onClick={startEditing}
               >
                 Edit review
+              </button>
+              <button
+                type="button"
+                className="table-action"
+                onClick={() => void handleShare()}
+              >
+                {shareLabel}
               </button>
               <Link
                 className="table-action"

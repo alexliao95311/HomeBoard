@@ -173,3 +173,7 @@ export interface ContractComparisonListItem {
   best_overall_vendor: string | null;
   created_at: string;
 }
+
+export interface ShareResponse {
+  token: string;
+}

@@ -131,3 +131,7 @@ class ContractComparisonListItem(BaseModel):
     ai_model: str
     best_overall_vendor: str | None
     created_at: datetime
+
+
+class ShareResponse(BaseModel):
+    token: str

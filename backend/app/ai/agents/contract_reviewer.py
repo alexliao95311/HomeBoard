@@ -17,6 +17,26 @@ _SYSTEM_PROMPT = (
     "contract; set citation to null only if the contract is silent on that point. "
     "When writing monetary amounts, never use the $ symbol — write the number only "
     "(e.g. write '3,550' not '$3,550'). "
+    "\n\n"
+    "CRITICAL — HOA FEE STRUCTURE AWARENESS: "
+    "HOA management and service contracts frequently combine a low fixed monthly retainer with "
+    "additional variable fees that often dwarf the base fee. You must identify and flag ALL fee "
+    "components, not just the headline monthly rate. Common predatory practices to catch:\n"
+    "- Percentage-of-project fees: charging 5–15% of the total cost of any capital project, "
+    "reserve fund project, renovation, or repair the vendor oversees or coordinates. "
+    "This is UNFAIR and must be flagged HIGH RISK — the vendor's compensation should not "
+    "scale with project cost; it should reflect actual work performed (hours).\n"
+    "- Percentage-of-claim fees: charging a percentage of insurance claim payouts or "
+    "settlements the vendor helps process. This is UNFAIR for the same reason.\n"
+    "- Markup on third-party invoices: charging a percentage markup on subcontractor or "
+    "vendor invoices passed through to the HOA.\n"
+    "- Per-incident or per-occurrence fees layered on top of a monthly retainer.\n"
+    "- Fees for services that should reasonably be included in the base management fee "
+    "(e.g. attending board meetings, preparing routine reports, handling routine owner calls).\n"
+    "The HOA's preferred billing model is HOURLY RATES for actual work performed. "
+    "If a contract uses percentage-of-cost billing for project oversight or claim handling "
+    "instead of hourly billing, treat this as a HIGH RISK flag regardless of how low the "
+    "percentage appears. Always calculate or estimate the dollar impact where possible. "
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."
@@ -31,6 +51,14 @@ Contract context:
 
 Score exactly these 8 rubric categories in this order (do not add, remove, or rename any):
 1. "Price / Value"                 — max 20 points
+   Evaluate the TOTAL cost of ownership, not just the headline monthly or annual fee.
+   Identify every fee component: base/retainer fee, per-project fees, percentage-of-cost
+   fees, percentage-of-claim fees, invoice markups, per-incident charges, and fees for
+   services that should be included in the base fee. Deduct heavily if the contract uses
+   percentage-of-project or percentage-of-claim billing instead of hourly/time-based rates —
+   this is a fundamentally unfair structure that rewards the vendor for higher project costs
+   rather than actual work performed. A contract with a low monthly fee but 10% project
+   oversight surcharge can cost far more than a higher flat-fee contract.
 2. "Scope Clarity"                 — max 15 points
 3. "Term / Cancellation"           — max 15 points
 4. "Liability / Insurance"         — max 15 points
@@ -43,7 +71,7 @@ Score exactly these 8 rubric categories in this order (do not add, remove, or re
 
 Required JSON schema (fill every field, preserve field names exactly):
 {{
-  "executive_summary": "<Markdown-formatted breakdown of the contract for an HOA board. Use ## for section headings and blank lines between sections. Include exactly these sections in order: ## Contract Overview (parties, service type, purpose); ## Financial Terms (total cost, payment schedule, escalation, late fees, deposits); ## Scope of Work (bullet list of what is included; bullet list of what is explicitly excluded; note any missing performance standards); ## Term & Renewal (start/end dates, auto-renewal, notice requirements); ## Cancellation (termination-for-convenience terms, termination-for-cause terms, any penalties); ## Insurance & Liability (coverage types, liability caps, indemnification); ## Vendor Obligations (key deliverables, reporting, subcontractors, licensing); ## Notable Strengths (2–3 bullet points); ## Notable Concerns (2–3 bullet points). Only reference what the contract explicitly states; write 'The contract is silent on X' when a topic is not addressed. No AI disclaimers in this field.>",
+  "executive_summary": "<Markdown-formatted breakdown of the contract for an HOA board. Use ## for section headings and blank lines between sections. Include exactly these sections in order: ## Contract Overview (parties, service type, purpose); ## Financial Terms (break down ALL fee components separately — do not combine into a single total. List: (a) Base/retainer fee; (b) Per-project or per-incident fees — flag any percentage-of-cost fees explicitly and estimate their dollar impact using realistic project cost assumptions; (c) Percentage-of-claim fees — flag and estimate impact; (d) Invoice markups or surcharges; (e) Fees for services that appear to be add-ons to what should be included in the base; (f) Payment schedule, escalation clauses, and late fees. If any fee is percentage-based instead of hourly/time-based, state clearly why this is disadvantageous to the HOA.); ## Scope of Work (bullet list of what is included; bullet list of what is explicitly excluded; note any missing performance standards); ## Term & Renewal (start/end dates, auto-renewal, notice requirements); ## Cancellation (termination-for-convenience terms, termination-for-cause terms, any penalties); ## Insurance & Liability (coverage types, liability caps, indemnification); ## Vendor Obligations (key deliverables, reporting, subcontractors, licensing); ## Notable Strengths (2–3 bullet points); ## Notable Concerns (2–3 bullet points). Only reference what the contract explicitly states; write 'The contract is silent on X' when a topic is not addressed. No AI disclaimers in this field.>",
   "recommendation": "<Markdown-formatted recommendation. Start with a bold verdict: '**VERDICT: ACCEPT**', '**VERDICT: NEGOTIATE BEFORE SIGNING**', or '**VERDICT: REJECT**'. Follow with a one-sentence rationale. Then a numbered list of specific action items — for ACCEPT: confirmations required before countersigning; for NEGOTIATE: exact clause changes with locations; for REJECT: primary reasons and what a replacement contract must include.>",
   "risk_level": "low" | "medium" | "high",
   "total_score": <integer 0–100>,

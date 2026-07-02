@@ -15,6 +15,7 @@ import type {
   DocumentType,
   DocumentUpdateRequest,
   HealthResponse,
+  ShareResponse,
 } from "../types/api";
 
 const API_BASE_URL = (
@@ -389,4 +390,68 @@ export async function deleteComparison(
   if (!response.ok) {
     throw new Error(await errorDetail(response, "Could not delete comparison"));
   }
+}
+
+export async function shareReview(
+  idToken: string,
+  contractId: string,
+): Promise<ShareResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/${contractId}/review/share`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not generate share link"));
+  }
+
+  return response.json() as Promise<ShareResponse>;
+}
+
+export async function shareComparison(
+  idToken: string,
+  comparisonId: string,
+): Promise<ShareResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/contracts/comparisons/${comparisonId}/share`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not generate share link"));
+  }
+
+  return response.json() as Promise<ShareResponse>;
+}
+
+export async function getSharedReview(
+  token: string,
+  signal?: AbortSignal,
+): Promise<ContractWithReview> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/shared/review/${token}`, { signal });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Shared review not found"));
+  }
+
+  return response.json() as Promise<ContractWithReview>;
+}
+
+export async function getSharedComparison(
+  token: string,
+  signal?: AbortSignal,
+): Promise<ContractCompareResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/shared/comparison/${token}`, { signal });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Shared comparison not found"));
+  }
+
+  return response.json() as Promise<ContractCompareResponse>;
 }

@@ -15,6 +15,8 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
 import { PrivacySecurityPage } from "./pages/PrivacySecurityPage";
+import { SharedComparisonPage } from "./pages/SharedComparisonPage";
+import { SharedReviewPage } from "./pages/SharedReviewPage";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -102,6 +104,8 @@ function App() {
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/contracts/compare" element={<ContractComparePage />} />
         <Route path="/contracts/:contractId/review" element={<ContractReviewPage />} />
+        <Route path="/shared/review/:token" element={<SharedReviewPage />} />
+        <Route path="/shared/comparison/:token" element={<SharedComparisonPage />} />
         <Route path="/privacy-security" element={<PrivacySecurityPage />} />
       </Routes>
 

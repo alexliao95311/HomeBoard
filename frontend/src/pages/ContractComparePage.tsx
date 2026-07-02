@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SafeMarkdown } from "../components/SafeMarkdown";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { compareContracts, getComparison, listContracts } from "../api/client";
+import { compareContracts, getComparison, listContracts, shareComparison } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type {
   AiPerContractNote,
@@ -146,10 +146,24 @@ function AiAnalysisSection({
 function CompareResults({
   result,
   contracts,
+  onShare,
 }: {
   result: ContractCompareResponse;
   contracts: Contract[];
+  onShare: () => Promise<void>;
 }) {
+  const [shareLabel, setShareLabel] = useState("Share");
+
+  async function handleShare() {
+    try {
+      await onShare();
+      setShareLabel("Link copied!");
+    } catch {
+      setShareLabel("Error — try again");
+    }
+    setTimeout(() => setShareLabel("Share"), 2500);
+  }
+
   function vendorOf(contractId: string) {
     return (
       contracts.find((c) => c.id === contractId)?.vendor_name ??
@@ -169,6 +183,13 @@ function CompareResults({
     <div className="compare-results">
       <div className="compare-results__topbar no-print">
         <p className="compare-results__contracts">{vendorNames}</p>
+        <button
+          type="button"
+          className="button button--secondary review-page__btn"
+          onClick={() => void handleShare()}
+        >
+          {shareLabel}
+        </button>
         <button
           type="button"
           className="button button--secondary review-page__btn"
@@ -381,7 +402,17 @@ export function ContractComparePage() {
         ) : error ? (
           <div className="document-error" role="alert">{error}</div>
         ) : result ? (
-          <CompareResults result={result} contracts={contracts} />
+          <CompareResults
+            result={result}
+            contracts={contracts}
+            onShare={async () => {
+              const idToken = await getIdToken();
+              const { token } = await shareComparison(idToken, result.comparison_id);
+              await navigator.clipboard.writeText(
+                `${window.location.origin}/shared/comparison/${token}`,
+              );
+            }}
+          />
         ) : null}
       </main>
     );
@@ -472,7 +503,17 @@ export function ContractComparePage() {
       </div>
 
       {result ? (
-        <CompareResults result={result} contracts={contracts} />
+        <CompareResults
+          result={result}
+          contracts={contracts}
+          onShare={async () => {
+            const idToken = await getIdToken();
+            const { token } = await shareComparison(idToken, result.comparison_id);
+            await navigator.clipboard.writeText(
+              `${window.location.origin}/shared/comparison/${token}`,
+            );
+          }}
+        />
       ) : null}
     </main>
   );

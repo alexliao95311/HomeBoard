@@ -23,6 +23,7 @@ class ContractReview(Base):
     executive_summary: Mapped[str] = mapped_column(Text)
     recommendation: Mapped[str] = mapped_column(Text)
     raw_output_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    share_token: Mapped[uuid.UUID | None] = mapped_column(unique=True, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
