@@ -45,6 +45,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    profiles: ["vm"]
     restart: unless-stopped
     ports:
       - "80:80"

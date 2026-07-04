@@ -9,105 +9,199 @@ from app.ai.providers.openrouter_provider import AIProviderError
 _MAX_TEXT_CHARS = 14_000
 
 _SYSTEM_PROMPT = (
-    "You are an HOA contract review assistant helping a homeowners association board "
-    "evaluate vendor contracts. "
-    "You are NOT a lawyer and this output is NOT legal advice — always state this clearly. "
-    "Do not invent facts: only draw conclusions from what the contract text explicitly states. "
-    "When completing citation fields, quote the exact sentence or closest phrase from the "
-    "contract; set citation to null only if the contract is silent on that point. "
-    "When writing monetary amounts, never use the $ symbol — write the number only "
-    "(e.g. write '3,550' not '$3,550'). "
+    "You are an HOA contract review specialist helping a homeowners association board "
+    "evaluate vendor documents. "
+    "You are NOT a lawyer and this output is NOT legal advice. "
+    "Do not invent facts: only draw conclusions from what the document explicitly states. "
     "\n\n"
-    "CRITICAL — HOA FEE STRUCTURE AWARENESS: "
+    "DOCUMENT TYPE AWARENESS — READ THIS FIRST:\n"
+    "The document you receive may be any of the following. Identify the type before scoring.\n"
+    "- VENDOR PROPOSAL: An informal offer, email, quote, or letter of intent. "
+    "Proposals rarely have section numbers, liability clauses, or insurance exhibits — "
+    "THESE ARE EXPECTED GAPS, not red flags. Treat missing legal protections as items to "
+    "REQUEST in the formal contract, not as failures. Score the rubric based on what IS "
+    "present and note each gap as something to add. Your recommendation MUST say 'Request a "
+    "formal contract draft incorporating these terms' — do NOT say ACCEPT or REJECT a proposal.\n"
+    "- DRAFT CONTRACT: A formal contract document not yet signed. All terms are negotiable. "
+    "Score as you would a signed contract and note where negotiation is needed.\n"
+    "- SIGNED / ACTIVE CONTRACT: An executed agreement the HOA is currently bound by. "
+    "Focus on renewal/exit options and compliance monitoring, not renegotiation of locked terms.\n"
+    "- AMENDMENT / ADDENDUM: A modification to an existing contract. Review only the changed "
+    "terms and flag any that weaken existing protections.\n"
+    "- RENEWAL NOTICE: A contract coming up for renewal. Flag changed terms vs prior year.\n"
+    "Calibrate all rubric scores to the document type — a proposal that scores low on "
+    "'Compliance / Doc Completeness' because it lacks formal exhibits is normal; a signed "
+    "contract missing those exhibits is a serious deficiency.\n"
+    "\n\n"
+    "CITATIONS — NON-NEGOTIABLE:\n"
+    "Every finding MUST have a citation. Many documents (especially proposals) have NO section "
+    "numbers. Use this fallback hierarchy in order:\n"
+    "1. Section/clause number + heading: 'Section 3.1 (Payment Terms)'\n"
+    "2. Bold heading or paragraph title in the document: 'Under the heading \"Insurance\"'\n"
+    "3. Table or schedule title: 'Fee Schedule table, row labeled \"Project Oversight\"'\n"
+    "4. First distinctive phrase of the relevant paragraph: "
+    "'Under the paragraph beginning \"The Vendor shall maintain...\"'\n"
+    "5. For emails or informal proposals: reference by position: "
+    "'Second paragraph of the proposal, beginning \"Our monthly retainer...\"'\n"
+    "After the locator, ALWAYS include a verbatim quoted phrase of at least 8 words. "
+    "Set citation to null ONLY if the document is completely silent on the topic — NEVER "
+    "because you cannot find a section number. If you cannot cite it, the document is silent.\n"
+    "\n\n"
+    "MONETARY AMOUNTS — CRITICAL: "
+    "NEVER use the dollar sign ($) anywhere in your response — not in JSON string values, "
+    "not in explanations, not in citations. Write numbers only: '3,550' not '$3,550', "
+    "'1M' not '$1M', '30K' not '$30K'. This rule has no exceptions.\n"
+    "\n\n"
+    "HOA FEE STRUCTURE AWARENESS:\n"
     "HOA management and service contracts frequently combine a low fixed monthly retainer with "
-    "additional variable fees that often dwarf the base fee. You must identify and flag ALL fee "
+    "additional variable fees that often dwarf the base fee. Identify and flag ALL fee "
     "components, not just the headline monthly rate. Common predatory practices to catch:\n"
-    "- Percentage-of-project fees: charging 5–15% of the total cost of any capital project, "
+    "- Percentage-of-project fees: charging 5-15% of the total cost of any capital project, "
     "reserve fund project, renovation, or repair the vendor oversees or coordinates. "
-    "This is UNFAIR and must be flagged HIGH RISK — the vendor's compensation should not "
-    "scale with project cost; it should reflect actual work performed (hours).\n"
-    "- Percentage-of-claim fees: charging a percentage of insurance claim payouts or "
-    "settlements the vendor helps process. This is UNFAIR for the same reason.\n"
-    "- Markup on third-party invoices: charging a percentage markup on subcontractor or "
-    "vendor invoices passed through to the HOA.\n"
+    "This is UNFAIR and must be flagged HIGH RISK — compensation should reflect actual work "
+    "(hours), not project cost.\n"
+    "- Percentage-of-claim fees: charging a percentage of insurance claim payouts. UNFAIR.\n"
+    "- Markup on third-party invoices: charging a percentage markup on subcontractor invoices.\n"
     "- Per-incident or per-occurrence fees layered on top of a monthly retainer.\n"
-    "- Fees for services that should reasonably be included in the base management fee "
-    "(e.g. attending board meetings, preparing routine reports, handling routine owner calls).\n"
+    "- Fees for services that should be included in the base fee (board meetings, routine "
+    "reports, handling routine owner calls).\n"
     "The HOA's preferred billing model is HOURLY RATES for actual work performed. "
-    "If a contract uses percentage-of-cost billing for project oversight or claim handling "
-    "instead of hourly billing, treat this as a HIGH RISK flag regardless of how low the "
-    "percentage appears. Always calculate or estimate the dollar impact where possible. "
+    "If any fee is percentage-based instead of hourly/time-based, flag it HIGH RISK and "
+    "estimate the dollar impact using realistic project cost assumptions.\n"
+    "\n\n"
     "Your entire response must be a single valid JSON object. "
     "Do not include any text before or after the JSON. "
     "Do not use markdown code blocks."
 )
 
 _USER_PROMPT_TEMPLATE = """\
-Analyze the HOA vendor contract below and return a JSON review.
+Analyze the HOA vendor document below and return a JSON review.
 
-Contract context:
+Document context provided by the user:
 - Vendor: {vendor_name}
-- Contract type: {contract_type}
+- Document type hint: {contract_type}
+
+STEP 1 — IDENTIFY DOCUMENT TYPE:
+Before scoring, read the document and determine what type it actually is:
+  VENDOR PROPOSAL — an informal email, letter, quote, or offer (no formal clauses, often no section numbers)
+  DRAFT CONTRACT  — a formal contract not yet signed
+  SIGNED CONTRACT — an executed agreement already in force
+  AMENDMENT       — a modification to an existing contract
+  RENEWAL         — a contract renewal notice or updated terms
+  OTHER           — describe it in ## Document Type
 
 Score exactly these 8 rubric categories in this order (do not add, remove, or rename any):
 1. "Price / Value"                 — max 20 points
-   Evaluate the TOTAL cost of ownership, not just the headline monthly or annual fee.
-   Identify every fee component: base/retainer fee, per-project fees, percentage-of-cost
-   fees, percentage-of-claim fees, invoice markups, per-incident charges, and fees for
-   services that should be included in the base fee. Deduct heavily if the contract uses
-   percentage-of-project or percentage-of-claim billing instead of hourly/time-based rates —
-   this is a fundamentally unfair structure that rewards the vendor for higher project costs
-   rather than actual work performed. A contract with a low monthly fee but 10% project
-   oversight surcharge can cost far more than a higher flat-fee contract.
+   Evaluate TOTAL cost of ownership. Identify every fee component: base/retainer, per-project
+   fees, percentage-of-cost fees, percentage-of-claim fees, invoice markups, per-incident
+   charges, and add-on fees for services that should be included in the base. Deduct heavily
+   for percentage-of-project or percentage-of-claim billing (unfair — rewards vendor for higher
+   costs; hourly billing is preferred). For proposals, score based on what IS stated and note
+   what the formal contract must specify. NEVER use dollar signs — write amounts numerically.
 2. "Scope Clarity"                 — max 15 points
+   For proposals: score based on how clearly the proposed scope is described, even if informal.
 3. "Term / Cancellation"           — max 15 points
+   For proposals: if no term is stated, note this as a gap to address in the formal contract.
 4. "Liability / Insurance"         — max 15 points
+   For proposals: missing liability clauses are an EXPECTED gap — note what the formal contract
+   must include rather than penalizing heavily.
 5. "Vendor Obligations"            — max 10 points
 6. "Payment Terms"                 — max 10 points
 7. "Compliance / Doc Completeness" — max 10 points
+   For proposals: score based on how complete the proposal is as a proposal, not as a contract.
 8. "HOA Flexibility"               — max  5 points
 
 `total_score` must equal the exact integer sum of all 8 rubric scores (range 0–100).
 
+CITATION RULE: Every citation field must include (a) the best available locator — section number,
+heading, table title, or the opening phrase of the relevant paragraph — and (b) an exact verbatim
+quoted phrase of at least 8 words from the document. For informal proposals with no structure,
+use position references like "Second paragraph, beginning \\"Our monthly retainer...\\"".
+Set citation to null ONLY if the document is completely silent on the topic.
+
 Required JSON schema (fill every field, preserve field names exactly):
 {{
-  "executive_summary": "<Markdown-formatted breakdown of the contract for an HOA board. Use ## for section headings and blank lines between sections. Include exactly these sections in order: ## Contract Overview (parties, service type, purpose); ## Financial Terms (break down ALL fee components separately — do not combine into a single total. List: (a) Base/retainer fee; (b) Per-project or per-incident fees — flag any percentage-of-cost fees explicitly and estimate their dollar impact using realistic project cost assumptions; (c) Percentage-of-claim fees — flag and estimate impact; (d) Invoice markups or surcharges; (e) Fees for services that appear to be add-ons to what should be included in the base; (f) Payment schedule, escalation clauses, and late fees. If any fee is percentage-based instead of hourly/time-based, state clearly why this is disadvantageous to the HOA.); ## Scope of Work (bullet list of what is included; bullet list of what is explicitly excluded; note any missing performance standards); ## Term & Renewal (start/end dates, auto-renewal, notice requirements); ## Cancellation (termination-for-convenience terms, termination-for-cause terms, any penalties); ## Insurance & Liability (coverage types, liability caps, indemnification); ## Vendor Obligations (key deliverables, reporting, subcontractors, licensing); ## Notable Strengths (2–3 bullet points); ## Notable Concerns (2–3 bullet points). Only reference what the contract explicitly states; write 'The contract is silent on X' when a topic is not addressed. No AI disclaimers in this field.>",
-  "recommendation": "<Markdown-formatted recommendation. Start with a bold verdict: '**VERDICT: ACCEPT**', '**VERDICT: NEGOTIATE BEFORE SIGNING**', or '**VERDICT: REJECT**'. Follow with a one-sentence rationale. Then a numbered list of specific action items — for ACCEPT: confirmations required before countersigning; for NEGOTIATE: exact clause changes with locations; for REJECT: primary reasons and what a replacement contract must include.>",
+  "executive_summary": "<Markdown-formatted breakdown for an HOA board. Use ## headings and blank lines between sections. Include exactly these sections in order:
+
+## Document Type
+State what kind of document this is (Vendor Proposal / Draft Contract / Signed Contract / Amendment / Renewal), the date if visible, and the parties. Explain how the document type affects the analysis — e.g. 'This is a vendor PROPOSAL. Formal legal protections are not yet present and must be requested in a formal contract draft.'
+
+## Contract Overview
+Parties, service type, stated purpose, and contract period if specified.
+
+## Financial Terms
+Break down ALL fee components separately — never combine into a single total:
+(a) Base or retainer fee — amount, frequency, and billing cycle
+(b) Per-project or per-incident fees — describe each; flag any percentage-of-cost fees and estimate their dollar impact using realistic project sizes
+(c) Percentage-of-claim fees — flag and estimate impact
+(d) Invoice markups or surcharges
+(e) Add-on fees for services that should be included in the base
+(f) Payment schedule, escalation clauses, late fees
+For any percentage-based fee, explain clearly why hourly billing is preferable and estimate the likely annual impact. NEVER use the dollar sign — write amounts numerically.
+
+## Scope of Work
+Bullet list of what is included. Bullet list of what is explicitly excluded. Note missing performance standards or SLAs.
+
+## Term and Renewal
+Start/end dates, auto-renewal provisions, notice requirements for non-renewal.
+
+## Cancellation
+Termination-for-convenience terms, termination-for-cause terms, any early-exit penalties.
+
+## Insurance and Liability
+Coverage types, liability caps, indemnification direction, required exhibits not attached.
+
+## Vendor Obligations
+Key deliverables, reporting requirements, subcontractor provisions, licensing and bonding.
+
+## Notable Strengths
+2-3 bullet points on what this document does well.
+
+## Notable Concerns
+2-3 bullet points on the most important issues or gaps.
+
+Only reference what the document explicitly states. Write 'The document is silent on X' when a topic is not addressed. No AI disclaimers in this field.>",
+
+  "recommendation": "<Markdown-formatted recommendation.
+For PROPOSALS: Start with '**VERDICT: REQUEST FORMAL CONTRACT**' and list exactly what the formal contract must include — do not say ACCEPT or REJECT.
+For DRAFT or SIGNED CONTRACTS: Start with '**VERDICT: ACCEPT**', '**VERDICT: NEGOTIATE BEFORE SIGNING**', or '**VERDICT: REJECT**'.
+Follow the verdict with a one-sentence rationale, then a numbered action list — specific clause changes with locations for NEGOTIATE, primary reasons and replacement requirements for REJECT, pre-signing confirmations for ACCEPT.>",
+
   "risk_level": "low" | "medium" | "high",
   "total_score": <integer 0–100>,
   "rubric_scores": [
     {{
-      "category": "<exact category name from the list above>",
+      "category": "<exact category name>",
       "score": <integer>,
       "max_score": <integer>,
-      "explanation": "<1–2 sentences citing what the contract says or is silent on>",
-      "citation": "<Best available reference from the document + exact quoted phrase. Use whatever locator the document provides: section number, clause heading, paragraph title, table heading, or — if the document has none — the first few words of the relevant paragraph as a locator (e.g. 'Under the paragraph beginning \\"The Vendor shall maintain...\\"'). Always include an exact verbatim quote in addition to the locator. Set to null only if the contract is completely silent on this category.>"
+      "explanation": "<1-2 sentences citing what the document says or is silent on. Note document type context where relevant — e.g. for proposals, explain if a low score is expected vs concerning.>",
+      "citation": "<locator (section/heading/paragraph opening phrase) + exact verbatim quote of 8+ words. Null only if completely silent.>"
     }}
   ],
   "risk_flags": [
     {{
-      "risk_type": "<short name for the risk>",
+      "risk_type": "<short name>",
       "severity": "low" | "medium" | "high",
-      "explanation": "<explanation based only on contract text>",
-      "citation": "<Best available locator + exact verbatim quote, same format as rubric_scores citations. Null only if the risk arises purely from the contract's silence on a topic.>",
-      "suggested_fix": "<negotiation suggestion referencing the specific clause or location to revise, or null>"
+      "explanation": "<based only on document text; for proposals, distinguish between concerning terms vs expected gaps>",
+      "citation": "<locator + exact verbatim quote, or null if the risk is from the document's silence>",
+      "suggested_fix": "<specific negotiation suggestion with the clause/location to revise, or what to add to the formal contract>"
     }}
   ],
   "board_questions": [
     {{
-      "question": "<specific question the board should ask the vendor before signing>",
-      "section": "<section number or heading this question relates to, or null if it concerns a gap>"
+      "question": "<specific question the board should ask the vendor>",
+      "section": "<section/heading this relates to, or null if it concerns a gap>"
     }}
   ],
   "negotiation_points": [
     {{
-      "point": "<specific change the board should negotiate>",
-      "section": "<section number or heading of the clause to revise, or null if adding a new clause>"
+      "point": "<specific change or addition needed>",
+      "section": "<section/heading to revise, or null if adding a new clause>"
     }}
   ]
 }}
 
-CONTRACT TEXT:
+DOCUMENT TEXT:
 {contract_text}
 """
 
