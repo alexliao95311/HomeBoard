@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../backend:/app
       - ../secrets:/run/secrets:ro
@@ -35,13 +35,27 @@ services:
     env_file:
       - ../.env
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - ../frontend:/app
       - frontend_node_modules:/app/node_modules
     depends_on:
       backend:
         condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
 
   postgres:
     image: postgres:16-alpine
@@ -72,3 +86,5 @@ volumes:
   frontend_node_modules:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
