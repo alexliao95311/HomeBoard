@@ -186,6 +186,73 @@ export interface UserSettingsUpdateRequest {
   preferred_model: string;
 }
 
+export interface TransactionUploadCsvRequest {
+  document_id: string;
+  bank_account_name?: string;
+  fund_type?: string;
+}
+
+export interface TransactionPreview {
+  date: string;
+  description: string;
+  amount: string;
+  transaction_type: string;
+  category: string | null;
+}
+
+export interface TransactionUploadCsvResponse {
+  imported_count: number;
+  skipped_count: number;
+  warnings: string[];
+  detected_columns: Record<string, string>;
+  preview: TransactionPreview[];
+}
+
+export interface Transaction {
+  id: string;
+  organization_id: string;
+  bank_account_id: string | null;
+  source_document_id: string | null;
+  date: string;
+  description: string;
+  amount: string;
+  transaction_type: string;
+  vendor_name: string | null;
+  category: string | null;
+  fund_type: string | null;
+  confidence_score: string | null;
+  created_at: string;
+}
+
+export interface TransactionUpdateRequest {
+  category?: string | null;
+  vendor_name?: string | null;
+  fund_type?: string | null;
+  transaction_type?: string | null;
+}
+
+export const TRANSACTION_CATEGORIES = [
+  "Assessment Income",
+  "Interest Income",
+  "Landscaping",
+  "Pool Maintenance",
+  "Utilities",
+  "Insurance",
+  "Management Fees",
+  "Legal",
+  "Security",
+  "Trash & Recycling",
+  "Pest Control",
+  "Elevator",
+  "Janitorial",
+  "Repairs & Maintenance",
+  "Accounting & Audit",
+  "Bank Fees",
+  "Reserve Contribution",
+  "Transfer",
+  "Uncategorized",
+] as const;
+
 export const AI_MODELS = [
   { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
   { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", provider: "Anthropic" },

@@ -16,6 +16,10 @@ import type {
   DocumentUpdateRequest,
   HealthResponse,
   ShareResponse,
+  Transaction,
+  TransactionUpdateRequest,
+  TransactionUploadCsvRequest,
+  TransactionUploadCsvResponse,
   UserSettings,
   UserSettingsUpdateRequest,
 } from "../types/api";
@@ -54,7 +58,24 @@ async function errorDetail(
 ): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
-    return typeof body.detail === "string" ? body.detail : fallbackMessage;
+    const { detail } = body;
+    if (typeof detail === "string") return detail;
+    // Object detail: { message, warnings }
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const d = detail as Record<string, unknown>;
+      const parts: string[] = [];
+      if (typeof d.message === "string") parts.push(d.message);
+      if (Array.isArray(d.warnings) && d.warnings.length > 0) {
+        parts.push(...(d.warnings as string[]).slice(0, 5));
+      }
+      if (parts.length) return parts.join("\n");
+    }
+    // FastAPI validation error: array of { loc, msg, type }
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as Record<string, unknown>;
+      if (typeof first.msg === "string") return `Validation error: ${first.msg}`;
+    }
+    return fallbackMessage;
   } catch {
     return fallbackMessage;
   }
@@ -456,6 +477,111 @@ export async function getSharedComparison(
   }
 
   return response.json() as Promise<ContractCompareResponse>;
+}
+
+export async function uploadCsvTransactions(
+  idToken: string,
+  request: TransactionUploadCsvRequest,
+): Promise<TransactionUploadCsvResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/upload-csv`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "CSV import failed"));
+  }
+
+  return response.json() as Promise<TransactionUploadCsvResponse>;
+}
+
+export async function listTransactions(
+  idToken: string,
+  params?: { date_from?: string; date_to?: string },
+  signal?: AbortSignal,
+): Promise<Transaction[]> {
+  const url = new URL(`${API_BASE_URL}/api/v1/financials/transactions`);
+  if (params?.date_from) url.searchParams.set("date_from", params.date_from);
+  if (params?.date_to) url.searchParams.set("date_to", params.date_to);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load transactions"));
+  }
+
+  return response.json() as Promise<Transaction[]>;
+}
+
+export async function deleteTransaction(
+  idToken: string,
+  transactionId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/${transactionId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not delete transaction"));
+  }
+}
+
+export async function bulkDeleteTransactions(
+  idToken: string,
+  ids: string[],
+): Promise<{ deleted_count: number }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/bulk-delete`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not delete transactions"));
+  }
+  return response.json() as Promise<{ deleted_count: number }>;
+}
+
+export async function updateTransaction(
+  idToken: string,
+  transactionId: string,
+  request: TransactionUpdateRequest,
+): Promise<Transaction> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/${transactionId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not update transaction"));
+  }
+
+  return response.json() as Promise<Transaction>;
 }
 
 export async function getUserSettings(idToken: string): Promise<UserSettings> {

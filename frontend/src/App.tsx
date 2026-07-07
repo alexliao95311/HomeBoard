@@ -14,6 +14,7 @@ import { ContractsPage } from "./pages/ContractsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { DocumentTextPage } from "./pages/DocumentTextPage";
+import { FinancialPage } from "./pages/FinancialPage";
 import { PrivacySecurityPage } from "./pages/PrivacySecurityPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SharedComparisonPage } from "./pages/SharedComparisonPage";
@@ -54,6 +55,7 @@ function App() {
               </NavLink>
               <NavLink to="/documents">Documents</NavLink>
               <NavLink to="/contracts">Contracts</NavLink>
+              <NavLink to="/financial">Finances</NavLink>
               <NavLink to="/settings">Settings</NavLink>
             </nav>
           ) : null}
@@ -103,6 +105,7 @@ function App() {
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/contracts/compare" element={<ContractComparePage />} />
         <Route path="/contracts/:contractId/review" element={<ContractReviewPage />} />
+        <Route path="/financial" element={<FinancialPage />} />
         <Route path="/shared/review/:token" element={<SharedReviewPage />} />
         <Route path="/shared/comparison/:token" element={<SharedComparisonPage />} />
         <Route path="/privacy-security" element={<PrivacySecurityPage />} />

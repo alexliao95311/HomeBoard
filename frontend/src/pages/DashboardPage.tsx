@@ -23,7 +23,7 @@ const features = [
     title: "Financial oversight",
     description:
       "Track budget variance, categorize transactions, and surface anomalies.",
-    phase: "Phase 4",
+    phase: "Active",
   },
   {
     icon: "RPT",
@@ -55,6 +55,9 @@ export function DashboardPage() {
               </Link>
               <Link className="button button--secondary" to="/contracts">
                 Review contracts
+              </Link>
+              <Link className="button button--secondary" to="/financial">
+                View finances
               </Link>
             </>
           ) : (
