@@ -314,3 +314,175 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
 
 1. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.
+
+---
+
+## Financial Module Plan
+
+### Supported Input Types
+
+| Document type | Formats | Priority |
+|---|---|---|
+| Bank statement | PDF, CSV | 2 (CSV first, PDF after) |
+| Transaction export | CSV | 1 (highest) |
+| Budget | CSV, XLSX | 1 |
+| Invoice | PDF, DOCX | 3 |
+| Delinquency report | PDF, CSV, XLSX | 2 |
+| Prior financial report | PDF | 3 |
+| Reserve study | PDF | 3 |
+
+### Design Principles
+
+- **Structured data, not text summaries.** All financial reports are generated
+  from database rows computed by Python/Pandas/SQL — never from AI-generated
+  prose directly.
+- **AI assists, does not calculate.** AI classifies document type, extracts
+  tables from unstructured PDFs, and explains reports in plain English.
+  Arithmetic (totals, variances, anomaly thresholds) is always done in code.
+- **CSV/XLSX before PDF.** Tabular formats are parsed deterministically and
+  require no OCR or table-detection heuristics. PDF bank statement parsing is
+  added only after CSV ingestion is proven reliable.
+- **User review gate.** After AI parses a document, the user sees a preview of
+  extracted rows and can correct or discard them before they are committed to
+  the database.
+- **Scanned PDFs are deferred.** OCR (e.g. Tesseract or a cloud vision API) is
+  a future phase once native PDF parsing is stable.
+
+### Intake Pipeline (per document)
+
+```
+Upload financial document
+        │
+        ▼
+[1] financial_document_classifier.py
+    · AI reads first ~2 k chars + filename
+    · Returns: document_type, confidence, fund_type hint
+    · Writes FinancialDocumentParse row (status=classifying)
+        │
+        ▼
+[2] text_extraction_service.py  (existing, reused)
+    · PDF → PyMuPDF text + table blocks
+    · CSV/XLSX → raw rows via pandas
+    · DOCX → python-docx paragraphs + tables
+    · Writes DocumentTextChunk rows (existing)
+        │
+        ▼
+[3] financial_extraction_service.py
+    · Dispatches to the right parser by document_type:
+      ├─ transaction_parser.py   → List[TransactionRow]
+      ├─ budget_parser.py        → List[BudgetLineRow]
+      ├─ invoice_parser.py       → List[InvoiceRow]
+      └─ delinquency_parser.py   → List[DelinquencyRow]
+    · Each parser returns typed dataclass rows + a parse_warnings list
+    · Writes raw output to FinancialDocumentParse.extracted_json
+    · Sets status=needs_review
+        │
+        ▼
+[4] User reviews parsed rows in the UI
+    · Editable table: correct amounts, dates, categories, fund_type
+    · User clicks "Confirm" or "Discard"
+        │
+        ▼
+[5] financial_normalization_service.py
+    · On confirm: upserts normalized rows into:
+      Transaction, BudgetLine, Invoice, DelinquencyAccount
+    · Sets FinancialDocumentParse.status = committed
+    · Logs to AuditLog
+        │
+        ▼
+[6] financial_report_service.py
+    · Reads committed rows from DB
+    · Computes totals, variance vs budget, fund balances using SQL/Pandas
+    · Writes FinancialReport row (report_json)
+    · AI optionally adds a plain-English narrative via a separate call
+        │
+        ▼
+[7] anomaly_detection_service.py
+    · Runs after each transaction batch commit
+    · Rules: duplicate amounts, amounts > threshold, vendor not on approved list, etc.
+    · Writes AnomalyAlert rows
+```
+
+### Planned Services
+
+| File | Responsibility |
+|---|---|
+| `financial_document_classifier.py` | AI call → classify document type + fund_type |
+| `financial_extraction_service.py` | Dispatch to per-type parsers, write FinancialDocumentParse |
+| `transaction_parser.py` | CSV/XLSX → `List[TransactionRow]`; PDF bank statements (phase 2) |
+| `budget_parser.py` | CSV/XLSX → `List[BudgetLineRow]` with category + annual/monthly amounts |
+| `invoice_parser.py` | PDF/DOCX → `List[InvoiceRow]` (vendor, amount, line items) |
+| `delinquency_parser.py` | PDF/CSV/XLSX → `List[DelinquencyRow]` (unit, owner, balance, status) |
+| `financial_normalization_service.py` | Insert confirmed rows into Transaction / Invoice / DelinquencyAccount |
+| `financial_report_service.py` | SQL/Pandas → FinancialReport JSON + optional AI narrative |
+| `anomaly_detection_service.py` | Rule-based + optional AI anomaly scan → AnomalyAlert rows |
+
+### Additional Models Needed
+
+**`FinancialDocumentParse`** — tracks one parse attempt per uploaded document:
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| organization_id | UUID FK | → organizations |
+| document_id | UUID FK | → documents |
+| document_type | string | classifier output |
+| confidence_score | numeric nullable | classifier confidence |
+| extracted_json | JSON nullable | raw parser output (rows + warnings) |
+| status | string | `classifying` / `needs_review` / `committed` / `failed` |
+| created_at | datetime | |
+
+**`Invoice`** — one row per invoice document:
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| organization_id | UUID FK | |
+| source_document_id | UUID FK nullable | → documents |
+| vendor_name | string | |
+| invoice_number | string nullable | |
+| invoice_date | date nullable | |
+| due_date | date nullable | |
+| amount | numeric | total |
+| status | string | `pending` / `approved` / `paid` |
+| fund_type | string nullable | |
+| created_at | datetime | |
+
+**`DelinquencyAccount`** — one row per unit/owner in a delinquency report:
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | PK |
+| organization_id | UUID FK | |
+| source_document_id | UUID FK nullable | → documents |
+| report_date | date | date of the report |
+| unit_identifier | string | unit number or address |
+| owner_name | string nullable | |
+| balance_owed | numeric | |
+| days_overdue | int nullable | |
+| status | string nullable | e.g. `lien_filed`, `payment_plan` |
+| created_at | datetime | |
+
+### Implementation Order
+
+**Phase 1 — CSV/XLSX ingestion (build first)**
+1. `transaction_parser.py` — detect column headers, map to `TransactionRow`
+2. `budget_parser.py` — detect category + amount columns
+3. `financial_normalization_service.py` — commit confirmed rows
+4. `FinancialDocumentParse` model + migration
+5. User review UI: editable parsed-rows table per document
+
+**Phase 2 — Reports and anomalies**
+6. `financial_report_service.py` — income statement, balance summary, budget vs actual
+7. `anomaly_detection_service.py` — duplicate, threshold, and unknown-vendor rules
+8. Frontend financial dashboard: summary cards, transaction table, alert list
+
+**Phase 3 — PDF and DOCX inputs**
+9. `financial_document_classifier.py` — AI classification step
+10. `transaction_parser.py` — PDF bank statement table extraction (PyMuPDF `find_tables`)
+11. `invoice_parser.py` — PDF/DOCX invoice extraction
+12. `delinquency_parser.py` — delinquency report extraction
+13. `Invoice` + `DelinquencyAccount` models + migration
+
+**Phase 4 — Scanned PDFs (deferred)**
+14. OCR integration (Tesseract or Google Document AI) for image-only PDFs
