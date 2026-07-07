@@ -186,6 +186,17 @@ export interface UserSettingsUpdateRequest {
   preferred_model: string;
 }
 
+export interface TransactionCreateRequest {
+  date: string;
+  description: string;
+  amount: string;
+  transaction_type: "income" | "expense" | "transfer";
+  vendor_name?: string | null;
+  category?: string | null;
+  fund_type?: string | null;
+  bank_account_name?: string | null;
+}
+
 export interface TransactionUploadCsvRequest {
   document_id: string;
   bank_account_name?: string;

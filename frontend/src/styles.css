@@ -826,7 +826,9 @@ h1 {
 }
 
 .fin-import-form select,
-.fin-import-form input[type="text"] {
+.fin-import-form input[type="text"],
+.fin-import-form input[type="date"],
+.fin-import-form input[type="number"] {
   width: 100%;
   min-height: 42px;
   padding: 9px 12px;
@@ -836,6 +838,7 @@ h1 {
   background: #fff;
   font: inherit;
   font-size: 13px;
+  box-sizing: border-box;
 }
 
 

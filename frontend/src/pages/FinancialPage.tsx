@@ -3,6 +3,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   aiCategorizeTransactions,
   bulkDeleteTransactions,
+  createTransaction,
   deleteTransaction,
   listDocuments,
   listTransactions,
@@ -13,6 +14,7 @@ import { useAuth } from "../context/AuthContext";
 import type {
   Document,
   Transaction,
+  TransactionCreateRequest,
   TransactionUpdateRequest,
   TransactionUploadCsvResponse,
 } from "../types/api";
@@ -229,6 +231,181 @@ function ImportPanel({
               </ul>
             </details>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── add transaction panel ──────────────────────────────────────────────────────
+
+function AddTransactionPanel({ onCreated }: { onCreated: () => void }) {
+  const { getIdToken } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState("");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [txType, setTxType] = useState<"income" | "expense" | "transfer">("expense");
+  const [category, setCategory] = useState("");
+  const [fundType, setFundType] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    setDate("");
+    setDescription("");
+    setAmount("");
+    setTxType("expense");
+    setCategory("");
+    setFundType("");
+    setVendor("");
+    setAccountName("");
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const amountNum = parseFloat(amount);
+    if (!date || !description.trim() || !amount || amountNum <= 0) {
+      setError("Date, description, and a positive amount are required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const idToken = await getIdToken();
+      const request: TransactionCreateRequest = {
+        date,
+        description: description.trim(),
+        amount,
+        transaction_type: txType,
+        vendor_name: vendor.trim() || undefined,
+        category: category || undefined,
+        fund_type: fundType || undefined,
+        bank_account_name: accountName.trim() || undefined,
+      };
+      await createTransaction(idToken, request);
+      onCreated();
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create transaction");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fin-import-panel">
+      <button
+        className="fin-import-toggle"
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span>Add transaction manually</span>
+        <span className="fin-import-toggle__arrow">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="fin-import-body">
+          <form className="fin-import-form" onSubmit={(e) => void handleSubmit(e)}>
+            <label>
+              Date
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </label>
+
+            <label>
+              Description
+              <input
+                type="text"
+                placeholder="e.g. Pool service invoice"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                required
+              />
+            </label>
+
+            <label>
+              Amount
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </label>
+
+            <label>
+              Type
+              <select
+                value={txType}
+                onChange={(e) => setTxType(e.target.value as "income" | "expense" | "transfer")}
+              >
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+                <option value="transfer">Transfer</option>
+              </select>
+            </label>
+
+            <label>
+              Category <span className="field-optional">(optional)</span>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">Auto-detect</option>
+                {TRANSACTION_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Fund type <span className="field-optional">(optional)</span>
+              <select value={fundType} onChange={(e) => setFundType(e.target.value)}>
+                <option value="">Unspecified</option>
+                <option value="operating">Operating</option>
+                <option value="reserve">Reserve</option>
+              </select>
+            </label>
+
+            <label>
+              Vendor <span className="field-optional">(optional)</span>
+              <input
+                type="text"
+                placeholder="e.g. Acme Pool Co."
+                value={vendor}
+                onChange={(e) => setVendor(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Account name <span className="field-optional">(optional)</span>
+              <input
+                type="text"
+                placeholder="e.g. Operating Checking"
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+              />
+            </label>
+
+            <button
+              className="button button--primary"
+              type="submit"
+              disabled={saving}
+              style={{ alignSelf: "end" }}
+            >
+              {saving ? "Adding…" : "Add transaction"}
+            </button>
+          </form>
+
+          {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
         </div>
       )}
     </div>
@@ -846,6 +1023,8 @@ export function FinancialPage() {
       {!loadingDocs && (
         <ImportPanel csvDocuments={csvDocuments} onImported={() => void fetchTransactions()} />
       )}
+
+      <AddTransactionPanel onCreated={() => void fetchTransactions()} />
 
       {!loadingTx && transactions.length > 0 && (
         <>

@@ -17,6 +17,7 @@ import type {
   HealthResponse,
   ShareResponse,
   Transaction,
+  TransactionCreateRequest,
   TransactionUpdateRequest,
   TransactionUploadCsvRequest,
   TransactionUploadCsvResponse,
@@ -500,6 +501,29 @@ export async function uploadCsvTransactions(
   }
 
   return response.json() as Promise<TransactionUploadCsvResponse>;
+}
+
+export async function createTransaction(
+  idToken: string,
+  request: TransactionCreateRequest,
+): Promise<Transaction> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not create transaction"));
+  }
+
+  return response.json() as Promise<Transaction>;
 }
 
 export async function listTransactions(

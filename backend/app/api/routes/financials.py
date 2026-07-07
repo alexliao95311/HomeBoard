@@ -20,6 +20,7 @@ from app.schemas.financial import (
     AiCategorizeResponse,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    TransactionCreateRequest,
     TransactionPreview,
     TransactionResponse,
     TransactionUpdateRequest,
@@ -250,6 +251,64 @@ def upload_transaction_csv(
         detected_columns=parse_result.detected_columns,
         preview=preview,
     )
+
+
+@router.post(
+    "/transactions",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_transaction(
+    request: TransactionCreateRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Transaction:
+    description = request.description.strip()
+    if not description:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Description is required",
+        )
+
+    amount = request.amount
+    if request.transaction_type == "expense":
+        amount = -abs(amount)
+    elif request.transaction_type == "income":
+        amount = abs(amount)
+
+    bank_account_id: uuid.UUID | None = None
+    if request.bank_account_name:
+        account = _find_or_create_bank_account(
+            session,
+            organization.organization_id,
+            request.bank_account_name,
+            request.fund_type,
+        )
+        bank_account_id = account.id
+
+    category = request.category
+    confidence_score = Decimal("1.0")
+    if not category:
+        category, confidence = categorize(description)
+        confidence_score = Decimal(str(confidence))
+
+    tx = Transaction(
+        organization_id=organization.organization_id,
+        bank_account_id=bank_account_id,
+        source_document_id=None,
+        date=request.date,
+        description=description,
+        amount=amount,
+        transaction_type=request.transaction_type,
+        vendor_name=request.vendor_name,
+        category=category,
+        confidence_score=confidence_score,
+        fund_type=request.fund_type,
+    )
+    session.add(tx)
+    session.commit()
+    session.refresh(tx)
+    return tx
 
 
 _AI_CATEGORIZE_SYSTEM = (

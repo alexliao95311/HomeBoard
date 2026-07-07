@@ -1,8 +1,20 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class TransactionCreateRequest(BaseModel):
+    date: date
+    description: str
+    amount: Decimal = Field(gt=0)
+    transaction_type: Literal["income", "expense", "transfer"]
+    vendor_name: str | None = None
+    category: str | None = None
+    fund_type: str | None = None
+    bank_account_name: str | None = None
 
 
 class TransactionUploadCsvRequest(BaseModel):
