@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import {
+  aiCategorizeTransactions,
   bulkDeleteTransactions,
   deleteTransaction,
   listDocuments,
@@ -79,12 +80,12 @@ function ImportPanel({
   const [documentId, setDocumentId] = useState("");
   const [accountName, setAccountName] = useState("");
   const [fundType, setFundType] = useState("");
+  const [docType, setDocType] = useState("bank_statement");
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TransactionUploadCsvResponse | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function runImport(skipDuplicates: boolean) {
     if (!documentId) return;
     setImporting(true);
     setError(null);
@@ -95,15 +96,22 @@ function ImportPanel({
         document_id: documentId,
         bank_account_name: accountName.trim() || undefined,
         fund_type: fundType || undefined,
+        skip_duplicates: skipDuplicates,
+        force_expense: docType !== "bank_statement",
       });
       setResult(res);
       onImported();
-      setOpen(false);
+      if (res.duplicate_count === 0 || !skipDuplicates) setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
       setImporting(false);
     }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    await runImport(true);
   }
 
   return (
@@ -161,6 +169,16 @@ function ImportPanel({
                 </select>
               </label>
 
+              <label>
+                Document type
+                <select value={docType} onChange={(e) => setDocType(e.target.value)}>
+                  <option value="bank_statement">Bank Statement</option>
+                  <option value="invoice">Invoice / Bill</option>
+                  <option value="check_register">Check Register</option>
+                  <option value="expense_report">Expense Report</option>
+                </select>
+              </label>
+
               <button
                 className="button button--primary"
                 type="submit"
@@ -178,9 +196,29 @@ function ImportPanel({
 
       {result && (
         <div className="fin-import-result">
-          Imported <strong>{result.imported_count}</strong> transaction
-          {result.imported_count !== 1 ? "s" : ""}
-          {result.skipped_count > 0 && `, skipped ${result.skipped_count} rows`}.
+          <div>
+            Imported <strong>{result.imported_count}</strong> transaction
+            {result.imported_count !== 1 ? "s" : ""}
+            {result.skipped_count > 0 && `, skipped ${result.skipped_count} unparseable rows`}.
+          </div>
+
+          {result.duplicate_count > 0 && (
+            <div className="fin-import-duplicates">
+              <span>
+                <strong>{result.duplicate_count}</strong> duplicate
+                {result.duplicate_count !== 1 ? "s" : ""} skipped — same date, amount &amp; description already exist.
+              </span>
+              <button
+                className="table-action"
+                type="button"
+                disabled={importing}
+                onClick={() => void runImport(false)}
+              >
+                {importing ? "Importing…" : "Import duplicates anyway"}
+              </button>
+            </div>
+          )}
+
           {result.warnings.filter((w) => !w.startsWith("[AI")).length > 0 && (
             <details style={{ marginTop: 6 }}>
               <summary style={{ cursor: "pointer", fontSize: 11 }}>
@@ -242,10 +280,16 @@ function FilterBar({
   filters,
   onChange,
   onClear,
+  onAiCategorize,
+  aiCategorizing,
+  aiResult,
 }: {
   filters: Filters;
   onChange: (f: Partial<Filters>) => void;
   onClear: () => void;
+  onAiCategorize: () => void;
+  aiCategorizing: boolean;
+  aiResult: { updated_count: number; skipped_count: number } | null;
 }) {
   const hasActive =
     filters.dateFrom || filters.dateTo || filters.category || filters.fundType || filters.txType;
@@ -295,11 +339,29 @@ function FilterBar({
           <option value="transfer">Transfer</option>
         </select>
       </label>
-      {hasActive && (
-        <button className="table-action table-action--muted" type="button" onClick={onClear}>
-          Clear filters ×
-        </button>
-      )}
+      <div className="fin-filter-actions fin-filter-actions--end">
+        {hasActive && (
+          <button className="fin-filter-clear" type="button" onClick={onClear}>
+            <span>Clear filters</span>
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
+        <div className="fin-ai-inline">
+          <button
+            className="fin-filter-clear fin-filter-clear--primary"
+            type="button"
+            disabled={aiCategorizing}
+            onClick={onAiCategorize}
+          >
+            {aiCategorizing ? "Categorizing…" : "AI categorize"}
+          </button>
+          {aiResult && (
+            <span className="fin-ai-result">
+              {aiResult.updated_count > 0 ? `${aiResult.updated_count} updated` : "Nothing to categorize"}
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -403,6 +465,39 @@ function EditRow({
 
 // ── transaction table ─────────────────────────────────────────────────────────
 
+function SortTh({
+  col,
+  active,
+  dir,
+  onClick,
+  style,
+  children,
+}: {
+  col: string;
+  active: string;
+  dir: "asc" | "desc";
+  onClick: (col: string) => void;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const isActive = col === active;
+  return (
+    <th style={style}>
+      <button
+        type="button"
+        className="sort-th-btn"
+        onClick={() => onClick(col)}
+        aria-sort={isActive ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        {children}
+        <span className={`sort-indicator${isActive ? " sort-indicator--active" : ""}`}>
+          {isActive ? (dir === "asc" ? "▲" : "▼") : "⇅"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 function TransactionTable({
   transactions,
   onEdit,
@@ -413,6 +508,9 @@ function TransactionTable({
   onToggleSelect,
   onToggleAll,
   onSingleDelete,
+  sortCol,
+  sortDir,
+  onSort,
 }: {
   transactions: Transaction[];
   onEdit: (id: string) => void;
@@ -423,6 +521,9 @@ function TransactionTable({
   onToggleSelect: (id: string) => void;
   onToggleAll: () => void;
   onSingleDelete: (id: string) => void;
+  sortCol: string;
+  sortDir: "asc" | "desc";
+  onSort: (col: string) => void;
 }) {
   if (transactions.length === 0) {
     return (
@@ -450,12 +551,12 @@ function TransactionTable({
                 aria-label="Select all"
               />
             </th>
-            <th>Date</th>
-            <th>Description / Vendor</th>
-            <th style={{ textAlign: "right" }}>Amount</th>
-            <th>Type</th>
-            <th>Category</th>
-            <th>Fund</th>
+            <SortTh col="date" active={sortCol} dir={sortDir} onClick={onSort}>Date</SortTh>
+            <SortTh col="description" active={sortCol} dir={sortDir} onClick={onSort}>Description / Vendor</SortTh>
+            <SortTh col="amount" active={sortCol} dir={sortDir} onClick={onSort} style={{ textAlign: "right" }}>Amount</SortTh>
+            <SortTh col="type" active={sortCol} dir={sortDir} onClick={onSort}>Type</SortTh>
+            <SortTh col="category" active={sortCol} dir={sortDir} onClick={onSort}>Category</SortTh>
+            <SortTh col="fund_type" active={sortCol} dir={sortDir} onClick={onSort}>Fund</SortTh>
             <th></th>
           </tr>
         </thead>
@@ -551,6 +652,10 @@ export function FinancialPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [sortCol, setSortCol] = useState<string>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [aiCategorizing, setAiCategorizing] = useState(false);
+  const [aiCategorizeResult, setAiCategorizeResult] = useState<{ updated_count: number; skipped_count: number } | null>(null);
 
   const csvDocuments = documents.filter(
     (d) => d.content_type === "text/csv" || d.content_type === "text/plain",
@@ -599,6 +704,55 @@ export function FinancialPage() {
     if (filters.txType && tx.transaction_type !== filters.txType) return false;
     return true;
   });
+
+  function handleSort(col: string) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    let cmp = 0;
+    switch (sortCol) {
+      case "date":
+        cmp = a.date.localeCompare(b.date);
+        break;
+      case "description":
+        cmp = a.description.toLowerCase().localeCompare(b.description.toLowerCase());
+        break;
+      case "amount":
+        cmp = parseFloat(a.amount) - parseFloat(b.amount);
+        break;
+      case "type":
+        cmp = a.transaction_type.localeCompare(b.transaction_type);
+        break;
+      case "category":
+        cmp = (a.category ?? "").localeCompare(b.category ?? "");
+        break;
+      case "fund_type":
+        cmp = (a.fund_type ?? "").localeCompare(b.fund_type ?? "");
+        break;
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  async function handleAiCategorize() {
+    setAiCategorizing(true);
+    setAiCategorizeResult(null);
+    try {
+      const idToken = await getIdToken();
+      const result = await aiCategorizeTransactions(idToken);
+      setAiCategorizeResult(result);
+      if (result.updated_count > 0) await fetchTransactions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "AI categorization failed");
+    } finally {
+      setAiCategorizing(false);
+    }
+  }
 
   function handleToggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -697,11 +851,16 @@ export function FinancialPage() {
         <>
           <SummaryBar transactions={filtered} />
 
-          <FilterBar
-            filters={filters}
-            onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
-            onClear={() => setFilters(EMPTY_FILTERS)}
-          />
+          <div className="fin-filters-row">
+            <FilterBar
+              filters={filters}
+              onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
+              onClear={() => setFilters(EMPTY_FILTERS)}
+              onAiCategorize={() => void handleAiCategorize()}
+              aiCategorizing={aiCategorizing}
+              aiResult={aiCategorizeResult}
+            />
+          </div>
         </>
       )}
 
@@ -751,7 +910,7 @@ export function FinancialPage() {
           </div>
         ) : (
           <TransactionTable
-            transactions={filtered}
+            transactions={sortedFiltered}
             editingId={editingId}
             onEdit={setEditingId}
             onSave={handleSave}
@@ -760,6 +919,9 @@ export function FinancialPage() {
             onToggleSelect={handleToggleSelect}
             onToggleAll={handleToggleAll}
             onSingleDelete={(id) => void handleSingleDelete(id)}
+            sortCol={sortCol}
+            sortDir={sortDir}
+            onSort={handleSort}
           />
         )}
       </div>

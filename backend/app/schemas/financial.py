@@ -9,6 +9,8 @@ class TransactionUploadCsvRequest(BaseModel):
     document_id: uuid.UUID
     bank_account_name: str | None = None
     fund_type: str | None = None
+    skip_duplicates: bool = True
+    force_expense: bool = False
 
 
 class TransactionPreview(BaseModel):
@@ -22,6 +24,7 @@ class TransactionPreview(BaseModel):
 class TransactionUploadCsvResponse(BaseModel):
     imported_count: int
     skipped_count: int
+    duplicate_count: int
     warnings: list[str]
     detected_columns: dict[str, str]
     preview: list[TransactionPreview]
@@ -58,3 +61,8 @@ class BulkDeleteRequest(BaseModel):
 
 class BulkDeleteResponse(BaseModel):
     deleted_count: int
+
+
+class AiCategorizeResponse(BaseModel):
+    updated_count: int
+    skipped_count: int  # transactions where AI returned an invalid/unknown category

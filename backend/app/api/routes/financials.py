@@ -1,3 +1,5 @@
+import json
+import re
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -5,7 +7,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import delete as sql_delete, select
+from sqlalchemy import delete as sql_delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.providers.openrouter_provider import AIProviderError, OpenRouterProvider
@@ -15,6 +17,7 @@ from app.models.bank_account import BankAccount
 from app.models.document import Document
 from app.models.transaction import Transaction
 from app.schemas.financial import (
+    AiCategorizeResponse,
     BulkDeleteRequest,
     BulkDeleteResponse,
     TransactionPreview,
@@ -160,6 +163,40 @@ def upload_transaction_csv(
             detail={"message": msg, "warnings": parse_result.warnings},
         )
 
+    # ── duplicate detection ───────────────────────────────────────────────────
+    parsed_txs = parse_result.transactions
+    duplicate_count = 0
+
+    if request.skip_duplicates and parsed_txs:
+        date_min = min(t.date for t in parsed_txs)
+        date_max = max(t.date for t in parsed_txs)
+        existing = list(session.scalars(
+            select(Transaction).where(
+                Transaction.organization_id == organization.organization_id,
+                Transaction.date >= date_min,
+                Transaction.date <= date_max,
+            )
+        ))
+        existing_keys = {
+            (tx.date, tx.amount, tx.description.lower().strip())
+            for tx in existing
+        }
+        unique: list = []
+        for parsed in parsed_txs:
+            key = (parsed.date, parsed.amount, parsed.description.lower().strip())
+            if key in existing_keys:
+                duplicate_count += 1
+            else:
+                unique.append(parsed)
+        parsed_txs = unique
+
+    # ── force expense override (invoices) ─────────────────────────────────────
+    if request.force_expense:
+        for parsed in parsed_txs:
+            parsed.amount = -abs(parsed.amount)
+            parsed.transaction_type = "expense"
+
+    # ── insert ────────────────────────────────────────────────────────────────
     bank_account_id: uuid.UUID | None = None
     if request.bank_account_name:
         account = _find_or_create_bank_account(
@@ -170,8 +207,10 @@ def upload_transaction_csv(
         )
         bank_account_id = account.id
 
-    for parsed in parse_result.transactions:
+    for parsed in parsed_txs:
         category, confidence = categorize(parsed.description)
+        # Per-row fund_type (from CSV column) takes precedence over import-level default
+        fund_type = parsed.fund_type or request.fund_type
         session.add(Transaction(
             organization_id=organization.organization_id,
             bank_account_id=bank_account_id,
@@ -183,7 +222,7 @@ def upload_transaction_csv(
             vendor_name=parsed.vendor_name,
             category=category,
             confidence_score=Decimal(str(confidence)),
-            fund_type=request.fund_type,
+            fund_type=fund_type,
         ))
 
     session.commit()
@@ -196,7 +235,7 @@ def upload_transaction_csv(
             transaction_type=t.transaction_type,
             category=categorize(t.description)[0],
         )
-        for t in parse_result.transactions[:_PREVIEW_LIMIT]
+        for t in parsed_txs[:_PREVIEW_LIMIT]
     ]
 
     warnings = parse_result.warnings
@@ -204,12 +243,104 @@ def upload_transaction_csv(
         warnings = [f"[AI column detection used: {parse_result.detected_columns}]"] + warnings
 
     return TransactionUploadCsvResponse(
-        imported_count=len(parse_result.transactions),
+        imported_count=len(parsed_txs),
         skipped_count=parse_result.skipped_rows,
+        duplicate_count=duplicate_count,
         warnings=warnings,
         detected_columns=parse_result.detected_columns,
         preview=preview,
     )
+
+
+_AI_CATEGORIZE_SYSTEM = (
+    "You are a financial transaction categorizer for HOA (homeowners association) accounting. "
+    "Respond with ONLY valid JSON — no explanation, no markdown fences."
+)
+
+_AI_CATEGORIZE_BATCH = """\
+Assign each transaction to exactly one category from this list:
+{categories}
+
+Return a JSON array with one object per transaction:
+[{{"id": "<id>", "category": "<category>"}}, ...]
+
+Transactions (format: id|description):
+{lines}
+"""
+
+_BATCH_SIZE = 50
+
+
+@router.post("/transactions/ai-categorize", response_model=AiCategorizeResponse)
+def ai_categorize_transactions(
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> AiCategorizeResponse:
+    if settings.use_fake_ai or not settings.openrouter_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI categorization requires an OpenRouter API key.",
+        )
+
+    uncategorized = list(session.scalars(
+        select(Transaction).where(
+            Transaction.organization_id == organization.organization_id,
+            or_(
+                Transaction.category == "Uncategorized",
+                Transaction.category.is_(None),
+            ),
+        )
+    ))
+
+    if not uncategorized:
+        return AiCategorizeResponse(updated_count=0, skipped_count=0)
+
+    provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
+    category_set = set(CATEGORIES)
+    updated = 0
+    skipped = 0
+
+    # Process in batches to stay within token limits
+    for batch_start in range(0, len(uncategorized), _BATCH_SIZE):
+        batch = uncategorized[batch_start : batch_start + _BATCH_SIZE]
+        lines = "\n".join(f"{tx.id}|{tx.description}" for tx in batch)
+        prompt = _AI_CATEGORIZE_BATCH.format(
+            categories=", ".join(CATEGORIES),
+            lines=lines,
+        )
+        try:
+            raw = provider.complete(
+                messages=[
+                    {"role": "system", "content": _AI_CATEGORIZE_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+                model=settings.default_model,
+            )
+        except AIProviderError:
+            skipped += len(batch)
+            continue
+
+        raw = re.sub(r"```(?:json)?\s*", "", raw).strip().strip("`").strip()
+        try:
+            results: list[dict] = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            skipped += len(batch)
+            continue
+
+        id_to_tx = {str(tx.id): tx for tx in batch}
+        for item in results:
+            tx_id = str(item.get("id", ""))
+            category = item.get("category", "")
+            if tx_id not in id_to_tx or category not in category_set:
+                skipped += 1
+                continue
+            tx = id_to_tx[tx_id]
+            tx.category = category
+            tx.confidence_score = Decimal("0.75")
+            updated += 1
+
+    session.commit()
+    return AiCategorizeResponse(updated_count=updated, skipped_count=skipped)
 
 
 @router.patch("/transactions/{transaction_id}", response_model=TransactionResponse)

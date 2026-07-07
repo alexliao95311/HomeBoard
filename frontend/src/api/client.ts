@@ -584,6 +584,22 @@ export async function updateTransaction(
   return response.json() as Promise<Transaction>;
 }
 
+export async function aiCategorizeTransactions(
+  idToken: string,
+): Promise<{ updated_count: number; skipped_count: number }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/ai-categorize`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}` },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "AI categorization failed"));
+  }
+  return response.json() as Promise<{ updated_count: number; skipped_count: number }>;
+}
+
 export async function getUserSettings(idToken: string): Promise<UserSettings> {
   const response = await fetch(`${API_BASE_URL}/api/v1/settings`, {
     headers: { Authorization: `Bearer ${idToken}` },

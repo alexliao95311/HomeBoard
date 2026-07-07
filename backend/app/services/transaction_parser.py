@@ -30,11 +30,14 @@ _DATE_COLS = {
     "date", "transaction date", "trans date", "trans. date",
     "posted date", "posting date", "post date",
     "value date", "settlement date", "effective date", "cleared date",
+    "invoice date", "pay date", "paydate", "gl date", "due date",
+    "payment date", "check date", "created date", "process date",
 }
 _DESC_PRIMARY_COLS = {
     "description", "memo", "narrative", "details", "detail", "payee",
     "transaction description", "transaction narrative", "transaction details",
     "bai description", "remarks", "particulars", "name",
+    "vendor name", "merchant", "merchant name",
 }
 _DESC_FALLBACK_COLS = {
     "reference", "customer ref", "customer reference", "ref",
@@ -52,6 +55,11 @@ _CREDIT_COLS = {
     "credit", "credit amount", "deposit", "deposits",
     "payment", "in", "cr", "cr.", "credits",
     "money in",
+}
+_FUND_TYPE_COLS = {
+    "g/l department name", "gl department name", "department name",
+    "department", "fund", "fund type", "fund name",
+    "account type", "gl department", "cost center",
 }
 
 _AI_SYSTEM_PROMPT = (
@@ -72,17 +80,19 @@ Return a JSON object with exactly these keys. Each value must be an exact header
 from the list above (including any leading/trailing spaces), or null if that role is not present:
 {{
   "date": "<transaction date column or null>",
-  "description": "<description / memo / payee column or null>",
+  "description": "<description / memo / payee / vendor column or null>",
   "amount": "<single signed amount column or null>",
   "debit": "<money-out / withdrawal / charge column or null>",
-  "credit": "<money-in / deposit / payment column or null>"
+  "credit": "<money-in / deposit / payment column or null>",
+  "fund_type": "<column whose values indicate operating vs reserve fund, or null>"
 }}
 
 Rules:
 - Use amount when there is one signed amount column (positive=income, negative=expense).
 - Use debit and/or credit when money-in and money-out are in separate columns.
 - date and description must be non-null.
-- At least one of amount, debit, or credit must be non-null.\
+- At least one of amount, debit, or credit must be non-null.
+- fund_type is optional — only set it if a column clearly identifies the fund (e.g. "G/L Department Name", "Department", "Fund").\
 """
 
 
@@ -93,6 +103,7 @@ class ParsedTransaction:
     amount: Decimal
     transaction_type: str  # "income" | "expense"
     vendor_name: str | None
+    fund_type: str | None = None
 
 
 @dataclass
@@ -105,6 +116,15 @@ class ParseResult:
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────
+
+def _normalize_fund_type(raw: str) -> str | None:
+    lower = raw.strip().lower()
+    if any(kw in lower for kw in ("reserve", "reserves", "capital reserve")):
+        return "reserve"
+    if any(kw in lower for kw in ("operating", "operations", "general", "op fund")):
+        return "operating"
+    return None
+
 
 def _parse_amount(raw: str) -> Decimal | None:
     s = raw.strip()
@@ -159,6 +179,8 @@ def _detect_columns_heuristic(headers: list[str]) -> dict[str, str]:
             result["debit"] = header
         elif norm in _CREDIT_COLS and "credit" not in result:
             result["credit"] = header
+        elif norm in _FUND_TYPE_COLS and "fund_type" not in result:
+            result["fund_type"] = header
     if "description" not in result and fallback_desc is not None:
         result["description"] = fallback_desc
     return result
@@ -235,6 +257,11 @@ def _parse_rows(
             continue
 
         transaction_type = "income" if amount > 0 else "expense"
+
+        fund_type: str | None = None
+        if "fund_type" in col_map:
+            fund_type = _normalize_fund_type(row.get(col_map["fund_type"], ""))
+
         transactions.append(
             ParsedTransaction(
                 date=parsed_date,
@@ -242,6 +269,7 @@ def _parse_rows(
                 amount=amount,
                 transaction_type=transaction_type,
                 vendor_name=None,
+                fund_type=fund_type,
             )
         )
 
@@ -288,13 +316,21 @@ def detect_columns_with_ai(
         return None
 
     header_set = set(headers)
-    col_map: dict[str, str] = {}
-    for role in ("date", "description", "amount", "debit", "credit"):
-        val = mapping.get(role)
-        if isinstance(val, str) and val in header_set:
-            col_map[role] = val
+    # Many CSVs have headers with leading/trailing spaces; AI typically strips them.
+    # Build a stripped→original lookup so "Invoice Date" matches " Invoice Date".
+    stripped_to_original = {h.strip(): h for h in headers}
 
-    # Validate minimum required roles
+    col_map: dict[str, str] = {}
+    for role in ("date", "description", "amount", "debit", "credit", "fund_type"):
+        val = mapping.get(role)
+        if not isinstance(val, str):
+            continue
+        if val in header_set:
+            col_map[role] = val
+        elif val.strip() in stripped_to_original:
+            col_map[role] = stripped_to_original[val.strip()]
+
+    # Validate minimum required roles (fund_type is optional)
     if "date" not in col_map or "description" not in col_map:
         return None
     if "amount" not in col_map and "debit" not in col_map and "credit" not in col_map:

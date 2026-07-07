@@ -190,6 +190,8 @@ export interface TransactionUploadCsvRequest {
   document_id: string;
   bank_account_name?: string;
   fund_type?: string;
+  skip_duplicates?: boolean;
+  force_expense?: boolean;
 }
 
 export interface TransactionPreview {
@@ -203,6 +205,7 @@ export interface TransactionPreview {
 export interface TransactionUploadCsvResponse {
   imported_count: number;
   skipped_count: number;
+  duplicate_count: number;
   warnings: string[];
   detected_columns: Record<string, string>;
   preview: TransactionPreview[];
