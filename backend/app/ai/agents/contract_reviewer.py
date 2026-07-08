@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.ai.json_utils import strip_code_fence
 from app.ai.providers.base import AIProvider
 from app.ai.providers.openrouter_provider import AIProviderError
 from app.ai.agents.text_reduction import reduce_text_to_budget
@@ -556,7 +557,7 @@ def run_ai_review(
         raise ContractReviewError(str(exc)) from exc
 
     try:
-        data = json.loads(raw)
+        data = json.loads(strip_code_fence(raw))
     except json.JSONDecodeError as exc:
         raise ContractReviewError(
             f"Model returned invalid JSON: {exc}. Raw output: {raw[:300]}"

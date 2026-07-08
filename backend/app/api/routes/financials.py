@@ -28,7 +28,7 @@ from app.schemas.financial import (
     TransactionUploadCsvResponse,
 )
 from app.schemas.module import ModuleStatus
-from app.services.categorization_service import CATEGORIES, categorize
+from app.services.categorization_service import CATEGORIES, categorize, vendor_key
 from app.services.organization_service import OrganizationContext, get_current_organization
 from app.services.transaction_parser import (
     detect_columns_with_ai,
@@ -335,12 +335,6 @@ def ai_categorize_transactions(
     organization: Annotated[OrganizationContext, Depends(get_current_organization)],
     session: Annotated[Session, Depends(get_database_session)],
 ) -> AiCategorizeResponse:
-    if settings.use_fake_ai or not settings.openrouter_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI categorization requires an OpenRouter API key.",
-        )
-
     uncategorized = list(session.scalars(
         select(Transaction).where(
             Transaction.organization_id == organization.organization_id,
@@ -354,15 +348,64 @@ def ai_categorize_transactions(
     if not uncategorized:
         return AiCategorizeResponse(updated_count=0, skipped_count=0)
 
+    updated = 0
+
+    # ── sweep 1: reuse the category already assigned to the same vendor ────────
+    # e.g. every prior "PG&E" transaction was categorized as Utilities, so any
+    # new PG&E transaction gets Utilities immediately, no AI call needed.
+    known = session.scalars(
+        select(Transaction).where(
+            Transaction.organization_id == organization.organization_id,
+            Transaction.category.is_not(None),
+            Transaction.category != "Uncategorized",
+        )
+    )
+    vendor_to_category: dict[str, str] = {}
+    for tx in known:
+        key = vendor_key(tx.description, tx.vendor_name)
+        if key and key not in vendor_to_category:
+            vendor_to_category[key] = tx.category
+
+    remaining: list[Transaction] = []
+    for tx in uncategorized:
+        known_category = vendor_to_category.get(vendor_key(tx.description, tx.vendor_name))
+        if known_category:
+            tx.category = known_category
+            tx.confidence_score = Decimal("0.85")
+            updated += 1
+        else:
+            remaining.append(tx)
+
+    if not remaining:
+        session.commit()
+        return AiCategorizeResponse(updated_count=updated, skipped_count=0)
+
+    if settings.use_fake_ai or not settings.openrouter_api_key:
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI categorization requires an OpenRouter API key.",
+        )
+
+    # ── sweep 2: dedupe remaining transactions by vendor before calling the AI ──
+    # Multiple uncategorized rows from the same new vendor only need one AI
+    # lookup; the result is then broadcast to the whole group.
+    groups: dict[str, list[Transaction]] = {}
+    for tx in remaining:
+        key = vendor_key(tx.description, tx.vendor_name) or str(tx.id)
+        groups.setdefault(key, []).append(tx)
+    representative_groups = list(groups.values())
+
     provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
     category_set = set(CATEGORIES)
-    updated = 0
     skipped = 0
 
     # Process in batches to stay within token limits
-    for batch_start in range(0, len(uncategorized), _BATCH_SIZE):
-        batch = uncategorized[batch_start : batch_start + _BATCH_SIZE]
-        lines = "\n".join(f"{tx.id}|{tx.description}" for tx in batch)
+    for batch_start in range(0, len(representative_groups), _BATCH_SIZE):
+        batch = representative_groups[batch_start : batch_start + _BATCH_SIZE]
+        id_to_group = {str(group[0].id): group for group in batch}
+        batch_size = sum(len(group) for group in batch)
+        lines = "\n".join(f"{group[0].id}|{group[0].description}" for group in batch)
         prompt = _AI_CATEGORIZE_BATCH.format(
             categories=", ".join(CATEGORIES),
             lines=lines,
@@ -376,27 +419,32 @@ def ai_categorize_transactions(
                 model=settings.default_model,
             )
         except AIProviderError:
-            skipped += len(batch)
+            skipped += batch_size
             continue
 
         raw = re.sub(r"```(?:json)?\s*", "", raw).strip().strip("`").strip()
         try:
             results: list[dict] = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
-            skipped += len(batch)
+            skipped += batch_size
             continue
 
-        id_to_tx = {str(tx.id): tx for tx in batch}
+        matched_ids: set[str] = set()
         for item in results:
             tx_id = str(item.get("id", ""))
             category = item.get("category", "")
-            if tx_id not in id_to_tx or category not in category_set:
+            if tx_id not in id_to_group or category not in category_set:
                 skipped += 1
                 continue
-            tx = id_to_tx[tx_id]
-            tx.category = category
-            tx.confidence_score = Decimal("0.75")
-            updated += 1
+            for tx in id_to_group[tx_id]:
+                tx.category = category
+                tx.confidence_score = Decimal("0.75")
+                updated += 1
+            matched_ids.add(tx_id)
+
+        for tx_id, group in id_to_group.items():
+            if tx_id not in matched_ids:
+                skipped += len(group)
 
     session.commit()
     return AiCategorizeResponse(updated_count=updated, skipped_count=skipped)

@@ -1,5 +1,7 @@
 """Rule-based transaction categorization for HOA finances."""
 
+import re
+
 # (keywords, category, confidence)
 # First matching rule wins. Keywords are matched as substrings of lowercased description.
 _RULES: list[tuple[list[str], str, float]] = [
@@ -37,6 +39,34 @@ def categorize(description: str) -> tuple[str, float]:
         if any(kw in lower for kw in keywords):
             return category, confidence
     return _DEFAULT_CATEGORY, _DEFAULT_CONFIDENCE
+
+
+_VENDOR_DIGITS_RE = re.compile(r"\d{3,}")
+_VENDOR_PUNCT_RE = re.compile(r"[^a-z0-9&\s]")
+_VENDOR_WS_RE = re.compile(r"\s+")
+
+# Words that describe the transaction rather than identify the payee — dropped
+# so "Acme Painting Invoice #501" and "Acme Painting Autopay #502" key the same.
+_VENDOR_NOISE_WORDS = {
+    "invoice", "order", "payment", "autopay", "bill", "billing",
+    "statement", "receipt", "ref", "reference", "no", "number",
+    "check", "chk", "inc", "llc", "corp", "co", "ltd",
+}
+
+
+def vendor_key(description: str, vendor_name: str | None) -> str:
+    """Normalize a transaction's vendor/description into a grouping key.
+
+    Strips reference numbers, punctuation, and generic transaction words so
+    that the same payee (e.g. "PG&E Electric #48291" and "PG&E Electric
+    Autopay #77213") groups together for category reuse and AI-batch
+    deduplication.
+    """
+    base = (vendor_name or description or "").lower()
+    base = _VENDOR_DIGITS_RE.sub(" ", base)
+    base = _VENDOR_PUNCT_RE.sub(" ", base)
+    tokens = [t for t in _VENDOR_WS_RE.split(base) if t and t not in _VENDOR_NOISE_WORDS]
+    return " ".join(tokens)
 
 
 # Canonical category list (for frontend dropdowns and report grouping)

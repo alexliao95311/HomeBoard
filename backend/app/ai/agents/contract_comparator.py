@@ -2,6 +2,7 @@ import json
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.ai.json_utils import strip_code_fence
 from app.ai.providers.base import AIProvider
 from app.ai.providers.openrouter_provider import AIProviderError
 from app.ai.agents.text_reduction import CHUNK_CHARS, reduce_text_to_budget
@@ -44,6 +45,19 @@ _SYSTEM_PROMPT = (
     "per year) so the board can compare true cost of ownership, not just base fees.\n"
     "- Flag any document that buries variable fees in schedules or exhibits.\n"
     "\n\n"
+    "CONSISTENCY — NON-NEGOTIABLE:\n"
+    "Your response must name exactly ONE favored vendor, consistently, everywhere a "
+    "recommendation appears. The vendor named in the 'Recommendation' section and the "
+    "'Recommended Next Step' section of `summary` MUST be the same vendor whose `per_contract` "
+    "verdict says to select or proceed with — never favor one vendor in `summary` and a "
+    "different vendor in `per_contract`. `critical_differences` must support that same "
+    "conclusion, not undercut it. If the honest answer is 'request more information before "
+    "deciding' (e.g. because one document is only a proposal) rather than picking a vendor "
+    "outright, say that identically in every section instead of naming a favorite in one place "
+    "and hedging in another. Before you finalize your response, re-read the 'Recommendation', "
+    "'Recommended Next Step', and every `per_contract` verdict and resolve any disagreement "
+    "between them — do not submit a response where they conflict.\n"
+    "\n\n"
     "FORMATTING:\n"
     "When writing markdown inside JSON fields, use bullet points and ## headings only. "
     "NEVER use markdown tables, pipe characters (|), or grid formatting. "
@@ -70,7 +84,7 @@ Return a JSON object with exactly these fields:
 For each document, one bullet: vendor name — document type (Proposal / Draft / Signed / Amendment). If types differ, explain why this makes the comparison uneven and what the board should do about it (e.g. request a formal contract draft from the proposal vendor before deciding).
 
 ## Recommendation
-Which document the board should favor, in one sentence, and the single most important reason. If one is a proposal and one is a signed contract, recommend requesting a matching formal contract draft before making a final decision.
+Which document the board should favor, in one sentence, and the single most important reason. If one is a proposal and one is a signed contract, recommend requesting a matching formal contract draft before making a final decision. This vendor MUST be the same one whose per_contract verdict says to select/proceed, and MUST match ## Recommended Next Step below.
 
 ## Fee Structure Comparison
 For each document, a sub-bullet block:
@@ -90,7 +104,7 @@ For each document, bullet the liability cap, insurance requirements, indemnifica
 Up to 5 bullets on the most important differences across all documents — cancellation terms, scope clarity, vendor obligations, fee transparency.
 
 ## Recommended Next Step
-One concrete action for the board: which document to select, or what to negotiate/request before deciding.
+One concrete action for the board: which document to select, or what to negotiate/request before deciding. Must name the same vendor as ## Recommendation — do not switch to a different favorite here.
 
 Do not include an AI disclaimer in this field.>",
 
@@ -99,7 +113,7 @@ Do not include an AI disclaimer in this field.>",
       "contract_id": "<exact UUID string as provided>",
       "strengths": ["<specific strength from the document text, max 3>"],
       "weaknesses": ["<specific weakness, max 3 — always include fee structure concerns if percentage billing is present; for proposals, note key gaps that must appear in the formal contract>"],
-      "verdict": "<one-sentence board-facing verdict. For proposals: state what the formal contract must include. For contracts: state whether to select, negotiate, or reject, and include a total cost estimate if percentage fees are present.>"
+      "verdict": "<one-sentence board-facing verdict. For proposals: state what the formal contract must include. For contracts: state whether to select, negotiate, or reject, and include a total cost estimate if percentage fees are present. Must agree with — never contradict — the vendor favored in summary's Recommendation section.>"
     }}
   ],
   "critical_differences": [
@@ -263,7 +277,7 @@ def run_ai_comparison(
         raise ContractComparisonError(str(exc)) from exc
 
     try:
-        data = json.loads(raw)
+        data = json.loads(strip_code_fence(raw))
     except json.JSONDecodeError as exc:
         raise ContractComparisonError(
             f"Model returned invalid JSON: {exc}. Raw output: {raw[:300]}"
