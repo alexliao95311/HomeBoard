@@ -4,8 +4,13 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.providers.base import AIProvider
 from app.ai.providers.openrouter_provider import AIProviderError
+from app.ai.agents.text_reduction import CHUNK_CHARS, reduce_text_to_budget
 
-_MAX_CHARS_PER_CONTRACT = 7_000
+# Total character budget shared across all documents being compared in a single call.
+# Every model in settings.ALLOWED_MODELS has a context window well over 100K tokens, so
+# this leaves ample room for the prompt scaffolding, per-document rubric summaries, and
+# the model's reply even when each document's share is used in full.
+_TOTAL_CHAR_BUDGET = 350_000
 
 _SYSTEM_PROMPT = (
     "You are an HOA contract comparison specialist helping a homeowners association board "
@@ -132,13 +137,20 @@ def _build_contract_block(
     risk_level: str,
     rubric_rows: list[dict],
     contract_text: str,
+    budget_chars: int,
+    provider: AIProvider,
+    model: str,
 ) -> str:
     rubric_summary = ", ".join(
         f"{r['category']}: {r['score']}/{r['max_score']}" for r in rubric_rows
     )
-    text = contract_text
-    if len(text) > _MAX_CHARS_PER_CONTRACT:
-        text = text[:_MAX_CHARS_PER_CONTRACT] + "\n[... truncated for length ...]"
+    text = reduce_text_to_budget(
+        contract_text,
+        budget_chars,
+        provider,
+        model,
+        label=f"document from {vendor_name or 'this vendor'}",
+    )
 
     return (
         f"=== DOCUMENT: {vendor_name or 'Unknown vendor'} ===\n"
@@ -217,6 +229,7 @@ def run_ai_comparison(
     provider: AIProvider,
     model: str,
 ) -> ContractComparisonResult:
+    per_contract_budget = max(_TOTAL_CHAR_BUDGET // max(len(contracts_info), 1), CHUNK_CHARS)
     contract_blocks = "\n\n".join(
         _build_contract_block(
             contract_id=c["contract_id"],
@@ -226,6 +239,9 @@ def run_ai_comparison(
             risk_level=c["risk_level"],
             rubric_rows=c["rubric_rows"],
             contract_text=c["contract_text"],
+            budget_chars=per_contract_budget,
+            provider=provider,
+            model=model,
         )
         for c in contracts_info
     )

@@ -5,8 +5,13 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.providers.base import AIProvider
 from app.ai.providers.openrouter_provider import AIProviderError
+from app.ai.agents.text_reduction import reduce_text_to_budget
 
-_MAX_TEXT_CHARS = 14_000
+# Every model in settings.ALLOWED_MODELS has a context window well over 100K tokens
+# (gpt-4o: 128K, claude-sonnet-5: 200K+, gemini-3.5-flash: 1M, grok-4.3: 128K+), so this
+# budget (~87K tokens) comfortably fits the full text of virtually any real HOA contract
+# in a single call, with headroom left for the prompt scaffolding and the model's reply.
+_MAX_TEXT_CHARS = 350_000
 
 _SYSTEM_PROMPT = (
     "You are an HOA contract review specialist helping a homeowners association board "
@@ -529,8 +534,9 @@ def run_ai_review(
     model: str,
 ) -> ContractReviewResult:
     contract_text = "\n\n".join(text_chunks)
-    if len(contract_text) > _MAX_TEXT_CHARS:
-        contract_text = contract_text[:_MAX_TEXT_CHARS] + "\n[... truncated for length ...]"
+    contract_text = reduce_text_to_budget(
+        contract_text, _MAX_TEXT_CHARS, provider, model, label="contract"
+    )
 
     prompt = _USER_PROMPT_TEMPLATE.format(
         vendor_name=vendor_name or "unknown",

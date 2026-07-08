@@ -310,6 +310,29 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
   a "Compare contracts →" link appears in the list header when 2+ reviews exist.
 - [x] All 11 existing backend contract tests pass.
 
+### 19. Fixed Contract Text Truncation Bug
+
+- [x] Root cause: `contract_reviewer.py` silently truncated contract text to
+  the first 14,000 characters (`contract_comparator.py` to 7,000 per
+  contract) before sending it to the AI. Term/Renewal, Cancellation, and
+  Insurance/Liability clauses typically appear later in a contract, so they
+  were often cut off — the AI then correctly but misleadingly reported the
+  document as "silent" on topics it never saw.
+- [x] Added `app/ai/agents/text_reduction.py` with `reduce_text_to_budget()`:
+  returns the text unchanged if it fits the budget; otherwise splits it into
+  ~90K-character chunks, runs a fact-extraction AI pass over each chunk
+  (verbatim quotes + section locators, no truncation), and returns the
+  combined extraction to stand in for the raw text.
+- [x] `contract_reviewer.py`: raised the single-call budget from 14,000 to
+  350,000 characters (~87K tokens — safe under every model in
+  `ALLOWED_MODELS`, all of which have 100K+ token context windows) and
+  replaced the hard truncation with `reduce_text_to_budget()`, so the map-reduce
+  path only kicks in for documents larger than ~350K characters.
+- [x] `contract_comparator.py`: replaced the flat 7,000-char-per-contract cap
+  with a 350,000-character budget shared across all compared documents
+  (divided evenly per contract, same map-reduce fallback for oversized
+  documents).
+
 ## Next Work
 
 1. Decide when to move document binaries from local storage to Firebase Cloud
