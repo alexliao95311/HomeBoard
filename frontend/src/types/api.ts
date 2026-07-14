@@ -195,6 +195,7 @@ export interface TransactionCreateRequest {
   category?: string | null;
   fund_type?: string | null;
   bank_account_name?: string | null;
+  skip_duplicates?: boolean;
 }
 
 export interface TransactionUploadCsvRequest {

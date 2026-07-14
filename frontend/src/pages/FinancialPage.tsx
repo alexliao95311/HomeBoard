@@ -5,6 +5,7 @@ import {
   bulkDeleteTransactions,
   createTransaction,
   deleteTransaction,
+  DuplicateTransactionError,
   listDocuments,
   listTransactions,
   updateTransaction,
@@ -252,6 +253,7 @@ function AddTransactionPanel({ onCreated }: { onCreated: () => void }) {
   const [accountName, setAccountName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   function reset() {
     setDate("");
@@ -264,36 +266,52 @@ function AddTransactionPanel({ onCreated }: { onCreated: () => void }) {
     setAccountName("");
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  function buildRequest(skipDuplicates: boolean): TransactionCreateRequest | null {
     const amountNum = parseFloat(amount);
     if (!date || !description.trim() || !amount || amountNum <= 0) {
       setError("Date, description, and a positive amount are required.");
-      return;
+      return null;
     }
+    return {
+      date,
+      description: description.trim(),
+      amount,
+      transaction_type: txType,
+      vendor_name: vendor.trim() || undefined,
+      category: category || undefined,
+      fund_type: fundType || undefined,
+      bank_account_name: accountName.trim() || undefined,
+      skip_duplicates: skipDuplicates,
+    };
+  }
+
+  async function submitTransaction(skipDuplicates: boolean) {
+    setError(null);
+    const request = buildRequest(skipDuplicates);
+    if (!request) return;
     setSaving(true);
     try {
       const idToken = await getIdToken();
-      const request: TransactionCreateRequest = {
-        date,
-        description: description.trim(),
-        amount,
-        transaction_type: txType,
-        vendor_name: vendor.trim() || undefined,
-        category: category || undefined,
-        fund_type: fundType || undefined,
-        bank_account_name: accountName.trim() || undefined,
-      };
       await createTransaction(idToken, request);
+      setDuplicateWarning(null);
       onCreated();
       reset();
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create transaction");
+      if (err instanceof DuplicateTransactionError) {
+        setDuplicateWarning(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "Could not create transaction");
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setDuplicateWarning(null);
+    await submitTransaction(true);
   }
 
   return (
@@ -406,6 +424,20 @@ function AddTransactionPanel({ onCreated }: { onCreated: () => void }) {
           </form>
 
           {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
+
+          {duplicateWarning && (
+            <div className="fin-import-duplicates">
+              <span>{duplicateWarning}</span>
+              <button
+                className="table-action"
+                type="button"
+                disabled={saving}
+                onClick={() => void submitTransaction(false)}
+              >
+                {saving ? "Adding…" : "Add anyway"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -15,6 +15,7 @@ class TransactionCreateRequest(BaseModel):
     category: str | None = None
     fund_type: str | None = None
     bank_account_name: str | None = None
+    skip_duplicates: bool = True
 
 
 class TransactionUploadCsvRequest(BaseModel):

@@ -276,6 +276,24 @@ def create_transaction(
     elif request.transaction_type == "income":
         amount = abs(amount)
 
+    if request.skip_duplicates:
+        candidates = session.scalars(
+            select(Transaction).where(
+                Transaction.organization_id == organization.organization_id,
+                Transaction.date == request.date,
+                Transaction.amount == amount,
+            )
+        )
+        is_duplicate = any(c.description.lower().strip() == description.lower() for c in candidates)
+        if is_duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "A transaction with the same date, amount, and description already exists.",
+                    "duplicate": True,
+                },
+            )
+
     bank_account_id: uuid.UUID | None = None
     if request.bank_account_name:
         account = _find_or_create_bank_account(

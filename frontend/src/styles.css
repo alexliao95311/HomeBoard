@@ -857,6 +857,7 @@ h1 {
   display: flex;
   gap: 14px;
   align-items: center;
+  margin-top: 14px;
   padding: 8px 12px;
   border-radius: 6px;
   background: rgb(214 183 118 / 15%);

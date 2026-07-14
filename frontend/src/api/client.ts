@@ -503,6 +503,8 @@ export async function uploadCsvTransactions(
   return response.json() as Promise<TransactionUploadCsvResponse>;
 }
 
+export class DuplicateTransactionError extends Error {}
+
 export async function createTransaction(
   idToken: string,
   request: TransactionCreateRequest,
@@ -520,7 +522,9 @@ export async function createTransaction(
   );
 
   if (!response.ok) {
-    throw new Error(await errorDetail(response, "Could not create transaction"));
+    const message = await errorDetail(response, "Could not create transaction");
+    if (response.status === 409) throw new DuplicateTransactionError(message);
+    throw new Error(message);
   }
 
   return response.json() as Promise<Transaction>;
