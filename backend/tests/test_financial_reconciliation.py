@@ -180,3 +180,76 @@ def test_normalizes_alternate_bank_column_names():
     assert record.description == "ACH DEBIT UTILITY CO"
     assert record.customer_ref == "REF900"
     assert record.source_type == "operating_activity"
+
+
+# ── same-account reversal: misdirected deposit corrected within one account ──
+
+def test_misdirected_deposit_reversed_in_same_account_is_not_income():
+    # a deposit lands in reserve by mistake, then gets corrected 2 days later
+    # by an equal-and-opposite entry in that SAME account (reserve) — this is
+    # a wash for reserve, not real income, and it must not ALSO be treated as
+    # an operating<->reserve transfer (there's no operating leg here at all).
+    reserve_content = _csv(
+        _RESERVE_HEADER,
+        '05/04/2026,"REF1",,50000.00,"DEPOSIT","","8410320037"',
+        '05/06/2026,"REF2",50000.00,,"BOOK TRANSFER DEBIT","REF ERRORCHECK DEP TO RES MOVE TO OPER","8410320037"',
+    )
+    result = reconcile_financial_files([("reserve_activity.csv", reserve_content)])
+
+    reversals = _matches_of_type(result, "same_account_reversal")
+    assert len(reversals) == 1
+    assert reversals[0].confidence == "high"
+    assert reversals[0].should_double_count is False
+    assert reversals[0].amount == Decimal("50000.00")
+
+    assert result.summary.total_income == Decimal("0")
+    assert result.summary.total_expenses == Decimal("0")
+
+
+def test_common_recurring_amount_without_keyword_is_not_flagged_as_reversal():
+    # three $275 lockbox deposits (the standard per-unit assessment amount)
+    # plus an unrelated $275 check paid a few days later — same account, same
+    # amount, opposite signs, but NO reversal/correction language anywhere.
+    # This must NOT be treated as a same-account reversal; matching on
+    # amount+date alone would misfire constantly on routine assessment cash.
+    content = _csv(
+        _OPERATING_HEADER,
+        '07/29/2025,"REF1",,275.00,"LOCKBOX DEPOSIT","","8050388751"',
+        '08/02/2025,"REF2",275.00,,"CHECK PAID","","8050388751"',
+    )
+    result = reconcile_financial_files([("operating_activity.csv", content)])
+
+    assert _matches_of_type(result, "same_account_reversal") == []
+    assert result.summary.total_income == Decimal("275.00")
+    assert result.summary.total_expenses == Decimal("275.00")
+
+
+def test_reversed_leg_is_not_also_treated_as_cross_account_transfer():
+    # the 3-leg real-world case: money is misdirected into reserve, corrected
+    # out of reserve into operating via a transfer-shaped pair. The reserve
+    # side must wash out via same_account_reversal — but the operating side
+    # actually receiving the money is REAL income, not an internal_transfer,
+    # since it isn't the HOA deliberately relocating its own reserve savings.
+    operating_content = _csv(
+        _OPERATING_HEADER,
+        '05/06/2026,"REF3",,50000.00,"BOOK TRANSFER CREDIT","FUNDS TRANSFER FRMDEP RES MOVE TO OPER","8050388751"',
+    )
+    reserve_content = _csv(
+        _RESERVE_HEADER,
+        '05/04/2026,"REF1",,50000.00,"DEPOSIT","","8410320037"',
+        '05/06/2026,"REF2",50000.00,,"BOOK TRANSFER DEBIT","REF ERRORCHECK DEP TO RES MOVE TO OPER","8410320037"',
+    )
+    result = reconcile_financial_files([
+        ("operating_activity.csv", operating_content),
+        ("reserve_activity.csv", reserve_content),
+    ])
+
+    assert len(_matches_of_type(result, "same_account_reversal")) == 1
+    assert _matches_of_type(result, "internal_transfer") == []
+
+    # reserve nets to zero (the misdirected deposit washes out); operating's
+    # $50,000 counts as real income, since that's where the money actually landed.
+    assert result.summary.reserve_net == Decimal("0")
+    assert result.summary.operating_net == Decimal("50000.00")
+    assert result.summary.total_income == Decimal("50000.00")
+    assert result.summary.total_expenses == Decimal("0")

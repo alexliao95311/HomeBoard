@@ -38,7 +38,11 @@ from app.schemas.financial import (
 )
 from app.schemas.module import ModuleStatus
 from app.services.categorization_service import CATEGORIES, categorize, vendor_key
-from app.services.financial_reconciliation import reconcile_financial_files
+from app.services.financial_reconciliation import (
+    existing_record_from_transaction,
+    reconcile_against_history,
+    reconcile_financial_files,
+)
 from app.services.financial_report_service import generate_report_json
 from app.services.organization_service import OrganizationContext, get_current_organization
 from app.services.transaction_parser import (
@@ -338,18 +342,57 @@ def import_reconciled_transactions(
             transfer_leg_ids.add(m.from_record_id)
             transfer_leg_ids.add(m.to_record_id)
 
+    # ── pass 2: reconcile against transactions already committed from earlier
+    # imports, so overlaps are caught even when related files (e.g. an invoice
+    # export and the bank export that pays it) are imported weeks apart.
+    surviving_records = [
+        r for r in result.normalized_records
+        if r.id not in exact_duplicate_excluded_ids and r.id not in invoice_matched_excluded_ids
+    ]
+    existing_transactions = list(session.scalars(
+        select(Transaction).where(Transaction.organization_id == organization.organization_id)
+    ))
+    existing_records = [
+        existing_record_from_transaction(
+            transaction_id=str(tx.id),
+            date_value=tx.date,
+            amount=Decimal(str(tx.amount)),
+            description=tx.description,
+            vendor_name=tx.vendor_name,
+            source_type=tx.source_type,
+            external_ref=tx.external_ref,
+            external_account_number=tx.external_account_number,
+        )
+        for tx in existing_transactions
+    ]
+    history = reconcile_against_history(surviving_records, existing_records)
+
+    all_excluded_ids = exact_duplicate_excluded_ids | invoice_matched_excluded_ids | history.exact_duplicate_new_ids | history.invoice_matched_new_ids
+    all_transfer_ids = transfer_leg_ids | history.transfer_new_ids
+
+    # a transfer leg committed by an EARLIER import (before its pair existed)
+    # was inserted as plain income/expense — now that the other leg has
+    # arrived, reclassify it so reports stop double-counting it going forward.
+    if history.transfer_existing_ids_to_reclassify:
+        reclassify_ids = {
+            uuid.UUID(rid.removeprefix("tx:")) for rid in history.transfer_existing_ids_to_reclassify
+        }
+        for tx in existing_transactions:
+            if tx.id in reclassify_ids:
+                tx.transaction_type = "transfer"
+
     bank_account_cache: dict[str, uuid.UUID] = {}
     imported_count = 0
 
     for record in result.normalized_records:
-        if record.id in exact_duplicate_excluded_ids or record.id in invoice_matched_excluded_ids:
+        if record.id in all_excluded_ids:
             continue
 
         effective_date = record.effective_date()
         if effective_date is None or record.amount == 0:
             continue
 
-        if record.id in transfer_leg_ids:
+        if record.id in all_transfer_ids:
             transaction_type = "transfer"
         elif record.amount > 0:
             transaction_type = "income"
@@ -383,20 +426,24 @@ def import_reconciled_transactions(
             category=category,
             confidence_score=Decimal(str(confidence)),
             fund_type=fund_type,
+            source_type=record.source_type,
+            external_ref=record.customer_ref,
+            external_account_number=record.account_number,
         ))
         imported_count += 1
 
     session.commit()
 
+    all_matches = result.reconciliation_matches + history.matches
+    all_flags = result.duplicate_flags + history.flags
+
     return ReconciledImportResponse(
         imported_count=imported_count,
-        exact_duplicate_skipped_count=len(exact_duplicate_excluded_ids),
-        invoice_matched_skipped_count=len(invoice_matched_excluded_ids),
-        internal_transfer_count=sum(
-            1 for m in result.reconciliation_matches if m.match_type == "internal_transfer"
-        ),
-        matches=[ReconciliationMatchOut(**m.to_dict()) for m in result.reconciliation_matches],
-        flags=[ReconciliationFlagOut(**f.to_dict()) for f in result.duplicate_flags],
+        exact_duplicate_skipped_count=len(exact_duplicate_excluded_ids) + len(history.exact_duplicate_new_ids),
+        invoice_matched_skipped_count=len(invoice_matched_excluded_ids) + len(history.invoice_matched_new_ids),
+        internal_transfer_count=sum(1 for m in all_matches if m.match_type == "internal_transfer"),
+        matches=[ReconciliationMatchOut(**m.to_dict()) for m in all_matches],
+        flags=[ReconciliationFlagOut(**f.to_dict()) for f in all_flags],
         warnings=result.warnings,
     )
 

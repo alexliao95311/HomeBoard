@@ -244,6 +244,8 @@ export interface TransactionUpdateRequest {
   vendor_name?: string | null;
   fund_type?: string | null;
   transaction_type?: string | null;
+  amount?: string | null;
+  description?: string | null;
 }
 
 export const TRANSACTION_CATEGORIES = [
@@ -325,7 +327,7 @@ export interface ReconciledImportRequest {
 }
 
 export interface ReconciliationMatch {
-  match_type: "invoice_payment_match" | "internal_transfer";
+  match_type: "invoice_payment_match" | "internal_transfer" | "same_account_reversal";
   confidence: "high" | "medium" | "low";
   amount: number;
   should_double_count: boolean;

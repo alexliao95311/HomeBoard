@@ -313,7 +313,13 @@ function ImportPanel({
                         <ul className="fin-reconcile-reasons">
                           {reconcileResult.matches.map((m, i) => (
                             <li key={`m-${i}`}>
-                              <strong>{m.match_type === "invoice_payment_match" ? "Matched" : "Transfer"}</strong>
+                              <strong>
+                                {m.match_type === "invoice_payment_match"
+                                  ? "Matched"
+                                  : m.match_type === "same_account_reversal"
+                                    ? "Reversal"
+                                    : "Transfer"}
+                              </strong>
                               {" "}({m.confidence} confidence): {m.reason}
                             </li>
                           ))}
@@ -741,15 +747,30 @@ function EditRow({
   const [vendor, setVendor] = useState(tx.vendor_name ?? "");
   const [fund, setFund] = useState(tx.fund_type ?? "");
   const [txType, setTxType] = useState(tx.transaction_type);
+  const [description, setDescription] = useState(tx.description);
+  const [amount, setAmount] = useState(tx.amount);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSave() {
+    const trimmedAmount = amount.trim();
+    if (!trimmedAmount || Number.isNaN(parseFloat(trimmedAmount)) || parseFloat(trimmedAmount) === 0) {
+      setError("Amount must be a non-zero number. Use a negative value for a credit/reversal.");
+      return;
+    }
+    if (!description.trim()) {
+      setError("Description is required.");
+      return;
+    }
+    setError(null);
     setSaving(true);
     await onSave({
       category: category || null,
       vendor_name: vendor.trim() || null,
       fund_type: fund || null,
       transaction_type: txType,
+      amount: trimmedAmount,
+      description: description.trim(),
     });
     setSaving(false);
   }
@@ -759,7 +780,13 @@ function EditRow({
       <td></td>
       <td style={{ whiteSpace: "nowrap", color: "#7a837f" }}>{tx.date}</td>
       <td>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{tx.description}</div>
+        <input
+          className="row-edit-input"
+          style={{ fontWeight: 600, marginBottom: 4 }}
+          placeholder="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
         <input
           className="row-edit-input"
           placeholder="Vendor name"
@@ -768,9 +795,17 @@ function EditRow({
         />
       </td>
       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-        <span style={{ color: tx.transaction_type === "expense" ? "#7c342a" : "#1f684f", fontVariantNumeric: "tabular-nums" }}>
-          {fmtSigned(tx.amount, tx.transaction_type)}
-        </span>
+        <input
+          className="row-edit-input"
+          style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+          type="number"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+        <div style={{ fontSize: 10, color: "#7a837f", marginTop: 2 }}>
+          negative = expense/credit, positive = income
+        </div>
       </td>
       <td>
         <select
@@ -807,6 +842,7 @@ function EditRow({
         </select>
       </td>
       <td className="row-actions">
+        {error && <div className="document-error" style={{ fontSize: 11, marginBottom: 4 }}>{error}</div>}
         <button
           className="table-action"
           type="button"

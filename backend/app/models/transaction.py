@@ -28,6 +28,9 @@ class Transaction(Base):
     category: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     fund_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    external_account_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

@@ -66,6 +66,8 @@ class TransactionUpdateRequest(BaseModel):
     vendor_name: str | None = None
     fund_type: str | None = None
     transaction_type: str | None = None
+    amount: Decimal | None = None
+    description: str | None = None
 
 
 class BulkDeleteRequest(BaseModel):
@@ -140,7 +142,7 @@ class ReconciledImportRequest(BaseModel):
 
 
 class ReconciliationMatchOut(BaseModel):
-    match_type: Literal["invoice_payment_match", "internal_transfer"]
+    match_type: Literal["invoice_payment_match", "internal_transfer", "same_account_reversal"]
     confidence: Literal["high", "medium", "low"]
     amount: float
     should_double_count: bool

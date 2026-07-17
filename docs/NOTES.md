@@ -12,8 +12,9 @@ are implemented. The financial module now covers transaction CSV import
 (single-file and multi-file reconciled), manual transaction entry, rule-based
 + AI categorization, a reconciliation engine that catches cross-file
 duplicate/invoice/transfer overlaps, and board-facing report generation with
-a `/financial` Reports tab. The current Alembic revision is `20260707_0006`,
-and all 40 backend tests pass.
+a `/financial` Reports tab. Reconciliation now works incrementally across
+separate imports, not just within one batch. The current Alembic revision is
+`20260717_0007`, and all 48 backend tests pass.
 
 ## Start the Project
 
@@ -400,6 +401,52 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
 - [x] 3 new tests in `test_financial_reconciled_import.py` reproducing the
   exact overlap scenario end-to-end (import → correct transaction rows →
   correct report totals) plus an ownership-check test.
+- [x] Added `source_type`, `external_ref`, `external_account_number` columns
+  to `transactions` (migration `20260717_0007`) so a committed transaction
+  remembers which kind of file/account it came from.
+- [x] Added incremental (cross-import) reconciliation:
+  `reconcile_against_history()` matches newly-imported rows against
+  transactions already committed from EARLIER imports — catches an invoice
+  matched to a bank payment (or vice versa) imported weeks apart, an
+  operating↔reserve transfer whose other leg already exists (retroactively
+  reclassifying the earlier-committed leg to `transaction_type="transfer"`),
+  and exact duplicates from a re-exported bank file with an overlapping date
+  range (matched by bank account, not filename). 8 tests across
+  `test_financial_history_reconciliation.py`.
+- [x] Added `match_same_account_reversals()` — catches a deposit misdirected
+  into the wrong account and corrected a few days later by an
+  equal-and-opposite entry in that SAME account (found via real Cottages at
+  DRV data: a $50,000 deposit landed in Reserve by bank error, then got
+  moved to Operating 2 days later). Deliberately requires an explicit
+  correction/reversal keyword in the transaction text before matching —
+  amount+date alone is too risky given how often HOA assessment payments
+  repeat the same round-number amounts. Fixed a related ordering bug: when
+  one leg of what looks like an operating↔reserve transfer is actually the
+  correction-side of a same-account reversal, the transfer match must not
+  also fire, or the OTHER account's leg (e.g. operating genuinely receiving
+  new income) gets wrongly excluded too. 4 tests.
+- [x] **Validated against real data**: imported the actual Cottages at DRV
+  `Invoice_Export.csv` / `Operating-8751-Account_Activity.csv` /
+  `Reserve-0037-Account_Activity.csv` and compared the May 2026 totals
+  against a professionally-prepared PDF financial report for the same
+  period. Found and fixed the reversal-ordering bug above. Remaining gap is
+  a real business-classification issue, not a code bug: ~$80k in insurance
+  settlement deposits are booked by the property manager as a **credit
+  against Legal expense**, not as income — inferable only from domain
+  knowledge, not from a bank line reading `"DEPOSIT"`. Also confirmed
+  structurally out of reach: the PDF's `$55,000.00` flat Assessments figure
+  is accrual-basis billed revenue (vs. our cash-basis lockbox/ACH deposits),
+  and its `($79,575.00)` Legal credit is a manual GL journal entry — neither
+  exists in any bank statement or vendor invoice export. Cash-basis
+  reporting from CSV imports is the accepted ceiling; matching an
+  accrual-basis professional report exactly would require ingesting a
+  general-ledger/journal-entry export as a new input type.
+- [x] Added amount + description editing to transaction PATCH
+  (`TransactionUpdateRequest.amount` / `.description`) and the inline edit
+  row, so a transaction like the settlement deposit above can be manually
+  reclassified (flip the amount's sign, retag the category) — report math
+  keys off the amount's sign, not the `transaction_type` label, so this is
+  what actually lets a user fix a miscategorized cash-basis entry.
 
 ### 22. Financial Report Generation
 

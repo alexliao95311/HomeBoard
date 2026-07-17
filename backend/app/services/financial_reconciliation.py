@@ -142,7 +142,7 @@ class NormalizedFinancialRecord:
 
 @dataclass
 class FinancialMatch:
-    match_type: Literal["invoice_payment_match", "internal_transfer"]
+    match_type: Literal["invoice_payment_match", "internal_transfer", "same_account_reversal"]
     confidence: Confidence
     amount: Decimal
     should_double_count: bool
@@ -464,10 +464,24 @@ def normalize_financial_csv(
 
 # ── part 2: exact duplicates ────────────────────────────────────────────────
 
-def _dedup_key(record: NormalizedFinancialRecord) -> tuple:
+def _default_scope_key(record: NormalizedFinancialRecord) -> str:
+    """Default duplicate-grouping scope: the file a row came from."""
+    return record.source_file
+
+
+def _account_scope_key(record: NormalizedFinancialRecord) -> str:
+    """Duplicate-grouping scope for cross-import matching: the bank account a
+    row belongs to (or blank for invoice/unrecognized rows), so a transaction
+    re-appearing in a later export of the *same account* is still caught even
+    though it's a different file.
+    """
+    return (record.account_number or "").strip().lower()
+
+
+def _dedup_key(record: NormalizedFinancialRecord, scope_key_fn=_default_scope_key) -> tuple:
     effective_date = record.effective_date()
     return (
-        record.source_file,
+        scope_key_fn(record),
         effective_date.isoformat() if effective_date else None,
         str(record.amount.quantize(Decimal("0.01"))),
         (record.description or "").strip().lower(),
@@ -476,10 +490,13 @@ def _dedup_key(record: NormalizedFinancialRecord) -> tuple:
     )
 
 
-def find_exact_duplicates(records: list[NormalizedFinancialRecord]) -> list[FinancialReviewFlag]:
+def find_exact_duplicates(
+    records: list[NormalizedFinancialRecord],
+    scope_key_fn=_default_scope_key,
+) -> list[FinancialReviewFlag]:
     groups: dict[tuple, list[NormalizedFinancialRecord]] = {}
     for record in records:
-        groups.setdefault(_dedup_key(record), []).append(record)
+        groups.setdefault(_dedup_key(record, scope_key_fn), []).append(record)
 
     flags: list[FinancialReviewFlag] = []
     for key, group in groups.items():
@@ -495,7 +512,7 @@ def find_exact_duplicates(records: list[NormalizedFinancialRecord]) -> list[Fina
             reason=(
                 f"This row appears to be an exact duplicate because the date, amount, "
                 f"description, reference number, and account number are identical to "
-                f"{len(group) - 1} other row(s) in {group[0].source_file}."
+                f"{len(group) - 1} other already-recorded row(s)."
             ),
             should_double_count=False,
         ))
@@ -512,13 +529,16 @@ def _duplicate_extra_ids(exact_duplicate_flags: list[FinancialReviewFlag]) -> se
 
 # ── part 6 (partial): possible duplicates ───────────────────────────────────
 
-def find_possible_duplicates(records: list[NormalizedFinancialRecord]) -> list[FinancialReviewFlag]:
+def find_possible_duplicates(
+    records: list[NormalizedFinancialRecord],
+    scope_key_fn=_default_scope_key,
+) -> list[FinancialReviewFlag]:
     groups: dict[tuple, list[NormalizedFinancialRecord]] = {}
     for record in records:
         effective_date = record.effective_date()
         if effective_date is None:
             continue
-        key = (record.source_file, effective_date.isoformat(), str(record.amount.quantize(Decimal("0.01"))))
+        key = (scope_key_fn(record), effective_date.isoformat(), str(record.amount.quantize(Decimal("0.01"))))
         groups.setdefault(key, []).append(record)
 
     flags: list[FinancialReviewFlag] = []
@@ -529,7 +549,7 @@ def find_possible_duplicates(records: list[NormalizedFinancialRecord]) -> list[F
         for i in range(len(group)):
             for j in range(i + 1, len(group)):
                 first, second = group[i], group[j]
-                if _dedup_key(first) == _dedup_key(second):
+                if _dedup_key(first, scope_key_fn) == _dedup_key(second, scope_key_fn):
                     continue  # already an exact duplicate
                 desc_a = (first.description or "").strip().lower()
                 desc_b = (second.description or "").strip().lower()
@@ -679,13 +699,22 @@ def match_internal_transfers(
     operating_records: list[NormalizedFinancialRecord],
     reserve_records: list[NormalizedFinancialRecord],
     max_business_days: int = 3,
+    excluded_ids: set[str] = frozenset(),
 ) -> tuple[list[FinancialMatch], list[FinancialReviewFlag]]:
+    """`excluded_ids` lets a caller keep a record out of transfer-pairing —
+
+    used so a leg already explained by `match_same_account_reversals` (an
+    external deposit misdirected into the wrong account, then corrected) isn't
+    ALSO paired here as a deliberate operating<->reserve fund transfer. If it
+    were, the *other* leg of that "transfer" (e.g. the operating side
+    receiving the corrected funds) would be wrongly excluded from income too.
+    """
     matches: list[FinancialMatch] = []
     review_flags: list[FinancialReviewFlag] = []
     consumed_reserve_ids: set[str] = set()
 
-    operating_candidates = [r for r in operating_records if r.amount != Decimal("0")]
-    reserve_candidates = [r for r in reserve_records if r.amount != Decimal("0")]
+    operating_candidates = [r for r in operating_records if r.amount != Decimal("0") and r.id not in excluded_ids]
+    reserve_candidates = [r for r in reserve_records if r.amount != Decimal("0") and r.id not in excluded_ids]
 
     for operating in operating_candidates:
         operating_date = operating.effective_date()
@@ -760,6 +789,93 @@ def match_internal_transfers(
     return matches, review_flags
 
 
+# ── same-account reversal matching ──────────────────────────────────────────
+# A deposit that lands in the wrong account and gets corrected a few days later
+# by an equal-and-opposite entry in that SAME account (e.g. "misdirected
+# deposit, moved back out") isn't income or an expense — it's a wash. This is
+# distinct from match_internal_transfers, which pairs opposite legs across the
+# operating/reserve accounts; here both legs are in the same physical account.
+#
+# Deliberately conservative: requires an explicit reversal/correction keyword
+# in the transaction text before ever matching, rather than amount+date alone
+# — recurring assessment payments share round-number amounts (e.g. $275/$550)
+# constantly, and matching on amount+date proximity alone would misfire on them.
+_REVERSAL_KEYWORDS = (
+    "error", "correction", "corrected", "revers", "returned", "return",
+    "book transfer", "move to", "misapplied", "misdirected", "void",
+)
+
+
+def match_same_account_reversals(
+    bank_records: list[NormalizedFinancialRecord],
+    consumed_ids: set[str],
+    max_days: int = 14,
+) -> tuple[list[FinancialMatch], list[FinancialReviewFlag]]:
+    matches: list[FinancialMatch] = []
+    review_flags: list[FinancialReviewFlag] = []
+    consumed: set[str] = set()
+
+    by_account: dict[str, list[NormalizedFinancialRecord]] = {}
+    for record in bank_records:
+        if record.id in consumed_ids or record.amount == Decimal("0"):
+            continue
+        account_key = (record.account_number or "").strip().lower()
+        if not account_key:
+            continue
+        by_account.setdefault(account_key, []).append(record)
+
+    for records in by_account.values():
+        ordered = sorted(records, key=lambda r: r.effective_date() or date_cls.min)
+        for i, first in enumerate(ordered):
+            if first.id in consumed:
+                continue
+            first_date = first.effective_date()
+            if first_date is None:
+                continue
+
+            for second in ordered[i + 1:]:
+                if second.id in consumed:
+                    continue
+                second_date = second.effective_date()
+                if second_date is None:
+                    continue
+                days_apart = (second_date - first_date).days
+                if days_apart > max_days:
+                    break  # ordered by date — no later record will be closer
+                if abs(first.amount + second.amount) > Decimal("0.01"):
+                    continue  # not equal-and-opposite
+
+                combined_text = _record_text(first) + " " + _record_text(second)
+                if not any(keyword in combined_text for keyword in _REVERSAL_KEYWORDS):
+                    continue  # no reversal/correction language — too risky to match
+
+                confidence: Confidence = "high" if days_apart <= 5 else "medium"
+                amount = abs(first.amount)
+                reason = (
+                    f"This appears to be a same-account correction, not real income or an "
+                    f"expense: a {'deposit' if first.amount > 0 else 'debit'} of {amount} was "
+                    f"reversed by an equal-and-opposite entry {days_apart} day(s) later in the "
+                    f"same account, and the transaction text references a correction."
+                )
+                matches.append(FinancialMatch(
+                    match_type="same_account_reversal",
+                    confidence=confidence,
+                    amount=amount,
+                    should_double_count=False,
+                    reason=reason,
+                    from_record_id=first.id,
+                    to_record_id=second.id,
+                    net_effect=Decimal("0"),
+                    should_count_as_income=False,
+                    should_count_as_expense=False,
+                ))
+                consumed.add(first.id)
+                consumed.add(second.id)
+                break
+
+    return matches, review_flags
+
+
 # ── part 6 (remaining): unmatched bank check payments ───────────────────────
 
 def find_unmatched_check_payments(
@@ -800,7 +916,7 @@ def _build_summary(
     transfer_leg_ids: set[str] = set()
     internal_transfer_total = Decimal("0")
     for match in matches:
-        if match.match_type == "internal_transfer":
+        if match.match_type in ("internal_transfer", "same_account_reversal"):
             transfer_leg_ids.add(match.from_record_id)
             transfer_leg_ids.add(match.to_record_id)
             internal_transfer_total += match.amount
@@ -872,10 +988,25 @@ def reconcile_financial_files(
     other_bank = [r for r in all_records if r.source_type == "unknown"]
     bank_records = operating + reserve + other_bank
 
-    invoice_matches, invoice_flags = match_invoices_to_bank_payments(invoices, bank_records)
-    transfer_matches, transfer_flags = match_internal_transfers(operating, reserve)
+    # same-account reversals are resolved FIRST: if a leg is really the
+    # correction of a misdirected external deposit (not the HOA deliberately
+    # moving its own money), it must not also be treated as an
+    # internal_transfer leg — that would wrongly exclude the OTHER account's
+    # matching entry (e.g. the operating side actually receiving new income)
+    # from income/expense too.
+    reversal_matches, reversal_flags = match_same_account_reversals(bank_records, duplicate_exclusion_ids)
+    reversal_consumed_ids: set[str] = set()
+    for match in reversal_matches:
+        reversal_consumed_ids.add(match.from_record_id)
+        reversal_consumed_ids.add(match.to_record_id)
 
-    consumed_ids = set(duplicate_exclusion_ids)
+    invoice_bank_pool = [r for r in bank_records if r.id not in reversal_consumed_ids]
+    invoice_matches, invoice_flags = match_invoices_to_bank_payments(invoices, invoice_bank_pool)
+    transfer_matches, transfer_flags = match_internal_transfers(
+        operating, reserve, excluded_ids=reversal_consumed_ids,
+    )
+
+    consumed_ids = set(duplicate_exclusion_ids) | reversal_consumed_ids
     for match in invoice_matches:
         consumed_ids.add(match.invoice_record_id)
         consumed_ids.add(match.bank_record_id)
@@ -889,9 +1020,9 @@ def reconcile_financial_files(
 
     all_flags = (
         exact_duplicate_flags + possible_duplicate_flags + invoice_flags
-        + transfer_flags + unmatched_bank_flags
+        + transfer_flags + reversal_flags + unmatched_bank_flags
     )
-    all_matches = invoice_matches + transfer_matches
+    all_matches = invoice_matches + transfer_matches + reversal_matches
 
     summary = _build_summary(all_records, all_matches, all_flags, duplicate_exclusion_ids)
 
@@ -901,4 +1032,145 @@ def reconcile_financial_files(
         reconciliation_matches=all_matches,
         summary=summary,
         warnings=warnings,
+    )
+
+
+# ── cross-import history matching ───────────────────────────────────────────
+# Reconciles freshly-normalized records against transactions already committed
+# from EARLIER imports, so overlaps are caught even when related files (e.g.
+# an invoice export and the operating-account export that pays it) are
+# imported weeks apart rather than in the same batch.
+
+@dataclass
+class HistoryReconciliationResult:
+    matches: list[FinancialMatch]
+    flags: list[FinancialReviewFlag]
+    exact_duplicate_new_ids: set[str]
+    invoice_matched_new_ids: set[str]
+    transfer_new_ids: set[str]
+    # existing (already-committed) transaction ids whose transaction_type should
+    # be retroactively updated to "transfer" now that their pair has arrived —
+    # unlike duplicate/invoice exclusion, this never deletes a committed row.
+    transfer_existing_ids_to_reclassify: set[str]
+
+
+def existing_record_from_transaction(
+    transaction_id: str,
+    date_value: date_cls,
+    amount: Decimal,
+    description: str | None,
+    vendor_name: str | None,
+    source_type: SourceType | None,
+    external_ref: str | None,
+    external_account_number: str | None,
+) -> NormalizedFinancialRecord:
+    """Build a NormalizedFinancialRecord standing in for an already-committed
+    transaction, so it can be matched against newly-imported rows using the
+    same logic used within a single import batch.
+    """
+    return NormalizedFinancialRecord(
+        id=f"tx:{transaction_id}",
+        source_file="existing",
+        source_type=source_type or "unknown",
+        date=date_value,
+        post_date=None,
+        amount=amount,
+        debit=None,
+        credit=None,
+        description=description,
+        detail=None,
+        vendor_name=vendor_name,
+        invoice_number=None,
+        customer_ref=external_ref,
+        account_number=external_account_number,
+        raw_row={},
+    )
+
+
+def reconcile_against_history(
+    new_records: list[NormalizedFinancialRecord],
+    existing_records: list[NormalizedFinancialRecord],
+) -> HistoryReconciliationResult:
+    """Match freshly-normalized `new_records` against `existing_records` already
+    committed from earlier imports. Only returns matches/flags involving at
+    least one new record — pairs entirely within `new_records` are the job of
+    `reconcile_financial_files`, and pairs entirely within `existing_records`
+    were (or should have been) resolved when they were originally imported.
+    """
+    new_ids = {r.id for r in new_records}
+    combined = new_records + existing_records
+
+    exact_duplicate_flags = [
+        flag for flag in find_exact_duplicates(combined, scope_key_fn=_account_scope_key)
+        if any(rid in new_ids for rid in flag.record_ids)
+    ]
+    # only the NEW half of an exact-duplicate group is ever excluded — an
+    # already-committed transaction is never re-flagged for removal.
+    exact_duplicate_new_ids = {
+        rid for flag in exact_duplicate_flags for rid in flag.record_ids if rid in new_ids
+    }
+
+    possible_duplicate_flags = [
+        flag for flag in find_possible_duplicates(combined, scope_key_fn=_account_scope_key)
+        if any(rid in new_ids for rid in flag.record_ids)
+    ]
+
+    # invoice arrives after its bank payment: exclude the new invoice, the
+    # existing bank payment already represents the cash.
+    new_invoices = [r for r in new_records if r.source_type == "invoice_export"]
+    existing_bank = [
+        r for r in existing_records
+        if r.source_type in ("operating_activity", "reserve_activity", "unknown")
+    ]
+    invoice_after_matches, invoice_after_flags = match_invoices_to_bank_payments(new_invoices, existing_bank)
+    invoice_matched_new_ids = {m.invoice_record_id for m in invoice_after_matches}
+
+    # bank payment arrives after its invoice: exclude the new bank payment, the
+    # existing invoice already represents the same expense.
+    existing_invoices = [r for r in existing_records if r.source_type == "invoice_export"]
+    new_bank = [
+        r for r in new_records
+        if r.source_type in ("operating_activity", "reserve_activity", "unknown")
+    ]
+    invoice_before_matches, invoice_before_flags = match_invoices_to_bank_payments(existing_invoices, new_bank)
+    invoice_matched_new_ids |= {m.bank_record_id for m in invoice_before_matches}
+
+    invoice_matches = invoice_after_matches + invoice_before_matches
+    invoice_flags = invoice_after_flags + invoice_before_flags
+
+    new_operating = [r for r in new_records if r.source_type == "operating_activity"]
+    new_reserve = [r for r in new_records if r.source_type == "reserve_activity"]
+    existing_operating = [r for r in existing_records if r.source_type == "operating_activity"]
+    existing_reserve = [r for r in existing_records if r.source_type == "reserve_activity"]
+
+    raw_transfer_matches, raw_transfer_flags = match_internal_transfers(
+        new_operating + existing_operating, new_reserve + existing_reserve,
+    )
+    # keep only pairs with exactly one new leg — new+new was already handled by
+    # reconcile_financial_files, and existing+existing isn't actionable here.
+    transfer_matches = [
+        m for m in raw_transfer_matches
+        if (m.from_record_id in new_ids) != (m.to_record_id in new_ids)
+    ]
+    transfer_flags = [
+        f for f in raw_transfer_flags
+        if len(f.record_ids) == 2 and (f.record_ids[0] in new_ids) != (f.record_ids[1] in new_ids)
+    ]
+    transfer_new_ids: set[str] = set()
+    transfer_existing_ids_to_reclassify: set[str] = set()
+    for m in transfer_matches:
+        if m.from_record_id in new_ids:
+            transfer_new_ids.add(m.from_record_id)
+            transfer_existing_ids_to_reclassify.add(m.to_record_id)
+        else:
+            transfer_new_ids.add(m.to_record_id)
+            transfer_existing_ids_to_reclassify.add(m.from_record_id)
+
+    return HistoryReconciliationResult(
+        matches=invoice_matches + transfer_matches,
+        flags=exact_duplicate_flags + possible_duplicate_flags + invoice_flags + transfer_flags,
+        exact_duplicate_new_ids=exact_duplicate_new_ids,
+        invoice_matched_new_ids=invoice_matched_new_ids,
+        transfer_new_ids=transfer_new_ids,
+        transfer_existing_ids_to_reclassify=transfer_existing_ids_to_reclassify,
     )
