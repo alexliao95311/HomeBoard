@@ -43,21 +43,6 @@ services:
       backend:
         condition: service_healthy
 
-  caddy:
-    image: caddy:2-alpine
-    profiles: ["vm"]
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - backend
-      - frontend
-
   postgres:
     image: postgres:16-alpine
     env_file:
@@ -87,5 +72,3 @@ volumes:
   frontend_node_modules:
   postgres_data:
   redis_data:
-  caddy_data:
-  caddy_config:
