@@ -8,8 +8,12 @@ Authenticated document upload, document listing, text extraction, the
 full contract-review API, AI provider abstraction with OpenRouter, the
 contract review UI at `/contracts`, inline edit/delete of reviews, and a
 dedicated per-review detail page at `/contracts/:id/review` with PDF export
-are implemented. The current Alembic revision is `20260628_0002`, and all
-22 backend tests pass.
+are implemented. The financial module now covers transaction CSV import
+(single-file and multi-file reconciled), manual transaction entry, rule-based
++ AI categorization, a reconciliation engine that catches cross-file
+duplicate/invoice/transfer overlaps, and board-facing report generation with
+a `/financial` Reports tab. The current Alembic revision is `20260707_0006`,
+and all 40 backend tests pass.
 
 ## Start the Project
 
@@ -333,14 +337,114 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
   (divided evenly per contract, same map-reduce fallback for oversized
   documents).
 
+### 20. Financial Transactions, Categorization, and Manual Entry
+
+- [x] Added `BankAccount`, `Transaction`, `Budget`, `BudgetLine`, `FinancialReport`,
+  and `AnomalyAlert` models and migration `20260707_0006`.
+- [x] Added `POST /api/v1/financials/transactions/upload-csv` — single-file CSV
+  import with heuristic column detection (date/description/amount or
+  debit+credit), AI column-detection fallback, per-batch duplicate skipping
+  (exact date+amount+description match against existing rows), and a
+  `force_expense` flag for invoice/bill-style files.
+- [x] Added `POST /api/v1/financials/transactions` (manual add, with the same
+  duplicate check and a 409 + "add anyway" override), `PATCH`/`DELETE`
+  `/transactions/{id}`, `POST /transactions/bulk-delete`, and
+  `GET /transactions` with date-range filtering.
+- [x] Added `app/services/categorization_service.py` — keyword-rule
+  categorization plus `POST /transactions/ai-categorize` (vendor-memory sweep,
+  then batched AI calls for anything still uncategorized).
+- [x] Added the `/financial` React page: CSV import panel, manual add-transaction
+  panel (with duplicate-warning + "Add anyway"), summary bar, filters, AI
+  categorize button, and a sortable/editable transaction table with bulk
+  delete.
+
+### 21. Financial Reconciliation Engine
+
+- [x] Added `app/services/financial_reconciliation.py` — normalizes rows from
+  `invoice_export` / `operating_activity` / `reserve_activity` (and
+  similarly-shaped `unknown`) CSVs into a common record shape, then finds:
+  - exact duplicates (same file, date, amount, description, ref, account)
+  - possible duplicates (same amount/date, near-identical description, no
+    automatic merge)
+  - invoice-to-bank-payment matches (amount + vendor-name match + date
+    window, confidence-scored high/medium/low)
+  - operating↔reserve internal transfers (equal-and-opposite amount, date
+    within business-day window, transfer keywords)
+  - a summary (income/expenses excluding transfers, per-account nets,
+    matched/unmatched invoice counts, duplicate counts)
+- [x] 7 tests in `test_financial_reconciliation.py`, including the "three
+  same-amount lockbox deposits on different dates are NOT duplicates" and
+  "same amount/date but different refs is only a *possible* duplicate"
+  cases from the design brief.
+- [x] **Bug found and fixed**: this engine originally existed only as a
+  tested standalone module — the live `/transactions/upload-csv` endpoint
+  never called it. Verified empirically that importing
+  `invoice_export.csv` + `operating_activity.csv` + `reserve_activity.csv`
+  one at a time (as the UI's single-file flow required) double-counted a
+  paid invoice (once as the invoice, once as the matching bank payment) and
+  double-counted an operating→reserve transfer (once as an operating
+  expense, once as reserve income).
+- [x] Added `POST /api/v1/financials/transactions/import-reconciled` —
+  accepts multiple `document_ids`, runs them through the reconciliation
+  engine together, then commits transactions while: skipping exact-duplicate
+  extras, skipping invoice rows that matched a bank payment (the bank row is
+  the source of truth for cash), and inserting internal-transfer legs with
+  `transaction_type="transfer"` instead of income/expense.
+- [x] Updated `financial_report_service.py` to exclude
+  `transaction_type == "transfer"` from income/expense totals and category
+  breakdowns.
+- [x] Added a "Reconcile multiple files" mode to the `/financial` import
+  panel — checkbox file picker, reconciliation summary (imported / exact
+  duplicates skipped / invoices matched / transfers detected), and a
+  human-readable reason per match/flag.
+- [x] 3 new tests in `test_financial_reconciled_import.py` reproducing the
+  exact overlap scenario end-to-end (import → correct transaction rows →
+  correct report totals) plus an ownership-check test.
+
+### 22. Financial Report Generation
+
+- [x] Added `app/services/financial_report_service.py` — computes total
+  income/expenses/net income, expenses/income by category, and (if a
+  `budget_id` is given) budget-vs-actual per category, from committed
+  `Transaction` rows in a date range. Pure code/math, no AI.
+- [x] Added `POST /api/v1/financials/reports/generate`,
+  `GET /api/v1/financials/reports`, `GET /api/v1/financials/reports/{id}`,
+  persisting to the existing `FinancialReport.report_json` column.
+- [x] 4 tests in `test_financial_reports.py` covering income/expense/variance
+  math, the no-budget case, inverted-period rejection, and 404.
+- [ ] Budget creation/upload API and UI — `Budget`/`BudgetLine` tables exist
+  but nothing can create one yet, so `budget_vs_actual` is empty until that's
+  built.
+
+### 23. Financial Reports UI
+
+- [x] Added **Transactions** / **Reports** tabs to `/financial`.
+- [x] Reports tab: date-range generate form, past-reports list, executive
+  summary cards, expenses-by-category and income-by-category tables, and a
+  budget-vs-actual table (only rendered when present) with over-budget rows
+  highlighted.
+- [ ] PDF export of a report (webpage version shipped first, PDF deferred).
+
 ## Next Work
 
 1. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.
+2. Build budget creation/upload so `budget_vs_actual` has real data to show.
+3. Add PDF export for financial reports.
 
 ---
 
 ## Financial Module Plan
+
+> **Status update:** the plan below (`FinancialDocumentParse`, `Invoice`,
+> `DelinquencyAccount`, the classify → extract → review-gate → normalize
+> pipeline) was superseded — CSV/XLSX transaction ingestion was built more
+> directly instead. See Steps 20–23 above for what actually exists today:
+> CSV import (single-file and multi-file reconciled), manual entry,
+> categorization, the reconciliation engine, and report generation. PDF
+> invoice/delinquency parsing and the dedicated review-gate UI described
+> below were never built. Treat this section as historical design context,
+> not current status.
 
 ### Supported Input Types
 

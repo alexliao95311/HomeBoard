@@ -6,7 +6,11 @@ import {
   createTransaction,
   deleteTransaction,
   DuplicateTransactionError,
+  generateFinancialReport,
+  getFinancialReport,
+  importReconciledTransactions,
   listDocuments,
+  listFinancialReports,
   listTransactions,
   updateTransaction,
   uploadCsvTransactions,
@@ -14,6 +18,9 @@ import {
 import { useAuth } from "../context/AuthContext";
 import type {
   Document,
+  FinancialReport,
+  FinancialReportListItem,
+  ReconciledImportResponse,
   Transaction,
   TransactionCreateRequest,
   TransactionUpdateRequest,
@@ -35,6 +42,12 @@ function fmt(amount: string) {
 function fmtSigned(amount: string, type: string) {
   const abs = fmt(amount);
   return type === "expense" ? `−${abs}` : `+${abs}`;
+}
+
+function fmtUsd(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+    Math.abs(n),
+  );
 }
 
 // ── summary helpers ───────────────────────────────────────────────────────────
@@ -80,6 +93,7 @@ function ImportPanel({
 }) {
   const { getIdToken } = useAuth();
   const [open, setOpen] = useState(true);
+  const [mode, setMode] = useState<"single" | "reconcile">("single");
   const [documentId, setDocumentId] = useState("");
   const [accountName, setAccountName] = useState("");
   const [fundType, setFundType] = useState("");
@@ -87,6 +101,11 @@ function ImportPanel({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TransactionUploadCsvResponse | null>(null);
+
+  const [reconcileIds, setReconcileIds] = useState<Set<string>>(new Set());
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [reconcileResult, setReconcileResult] = useState<ReconciledImportResponse | null>(null);
 
   async function runImport(skipDuplicates: boolean) {
     if (!documentId) return;
@@ -117,6 +136,33 @@ function ImportPanel({
     await runImport(true);
   }
 
+  function toggleReconcileId(id: string) {
+    setReconcileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleReconcileImport() {
+    if (reconcileIds.size === 0) return;
+    setReconciling(true);
+    setReconcileError(null);
+    setReconcileResult(null);
+    try {
+      const idToken = await getIdToken();
+      const res = await importReconciledTransactions(idToken, Array.from(reconcileIds));
+      setReconcileResult(res);
+      setReconcileIds(new Set());
+      onImported();
+    } catch (err) {
+      setReconcileError(err instanceof Error ? err.message : "Reconciled import failed");
+    } finally {
+      setReconciling(false);
+    }
+  }
+
   return (
     <div className="fin-import-panel">
       <button
@@ -136,61 +182,166 @@ function ImportPanel({
               <a href="/documents">Documents</a> workspace first.
             </p>
           ) : (
-            <form className="fin-import-form" onSubmit={(e) => void handleSubmit(e)}>
-              <label>
-                CSV document
-                <select
-                  value={documentId}
-                  onChange={(e) => setDocumentId(e.target.value)}
-                  required
+            <>
+              <div className="fin-tabs" role="tablist" aria-label="Import mode" style={{ marginBottom: 12 }}>
+                <button
+                  className={`fin-tab${mode === "single" ? " fin-tab--active" : ""}`}
+                  type="button"
+                  onClick={() => setMode("single")}
                 >
-                  <option value="">Select a document…</option>
-                  {csvDocuments.map((doc) => (
-                    <option key={doc.id} value={doc.id}>
-                      {doc.original_filename}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  Single file
+                </button>
+                <button
+                  className={`fin-tab${mode === "reconcile" ? " fin-tab--active" : ""}`}
+                  type="button"
+                  onClick={() => setMode("reconcile")}
+                >
+                  Reconcile multiple files
+                </button>
+              </div>
 
-              <label>
-                Account name <span className="field-optional">(optional)</span>
-                <input
-                  type="text"
-                  placeholder="e.g. Operating Checking"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                />
-              </label>
+              {mode === "single" ? (
+                <form className="fin-import-form" onSubmit={(e) => void handleSubmit(e)}>
+                  <label>
+                    CSV document
+                    <select
+                      value={documentId}
+                      onChange={(e) => setDocumentId(e.target.value)}
+                      required
+                    >
+                      <option value="">Select a document…</option>
+                      {csvDocuments.map((doc) => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.original_filename}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label>
-                Fund type <span className="field-optional">(optional)</span>
-                <select value={fundType} onChange={(e) => setFundType(e.target.value)}>
-                  <option value="">Unspecified</option>
-                  <option value="operating">Operating</option>
-                  <option value="reserve">Reserve</option>
-                </select>
-              </label>
+                  <label>
+                    Account name <span className="field-optional">(optional)</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. Operating Checking"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                    />
+                  </label>
 
-              <label>
-                Document type
-                <select value={docType} onChange={(e) => setDocType(e.target.value)}>
-                  <option value="bank_statement">Bank Statement</option>
-                  <option value="invoice">Invoice / Bill</option>
-                  <option value="check_register">Check Register</option>
-                  <option value="expense_report">Expense Report</option>
-                </select>
-              </label>
+                  <label>
+                    Fund type <span className="field-optional">(optional)</span>
+                    <select value={fundType} onChange={(e) => setFundType(e.target.value)}>
+                      <option value="">Unspecified</option>
+                      <option value="operating">Operating</option>
+                      <option value="reserve">Reserve</option>
+                    </select>
+                  </label>
 
-              <button
-                className="button button--primary"
-                type="submit"
-                disabled={importing || !documentId}
-                style={{ alignSelf: "end" }}
-              >
-                {importing ? "Importing…" : "Import"}
-              </button>
-            </form>
+                  <label>
+                    Document type
+                    <select value={docType} onChange={(e) => setDocType(e.target.value)}>
+                      <option value="bank_statement">Bank Statement</option>
+                      <option value="invoice">Invoice / Bill</option>
+                      <option value="check_register">Check Register</option>
+                      <option value="expense_report">Expense Report</option>
+                    </select>
+                  </label>
+
+                  <button
+                    className="button button--primary"
+                    type="submit"
+                    disabled={importing || !documentId}
+                    style={{ alignSelf: "end" }}
+                  >
+                    {importing ? "Importing…" : "Import"}
+                  </button>
+                </form>
+              ) : (
+                <div className="fin-reconcile-form">
+                  <p className="fin-import-hint">
+                    Select 2 or more files that may overlap (e.g. an invoice export plus the
+                    operating and reserve bank activity that pays those invoices, or an
+                    operating/reserve transfer pair). They'll be reconciled together so the
+                    same real-world expense or transfer isn't counted twice.
+                  </p>
+                  <ul className="fin-reconcile-checklist">
+                    {csvDocuments.map((doc) => (
+                      <li key={doc.id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={reconcileIds.has(doc.id)}
+                            onChange={() => toggleReconcileId(doc.id)}
+                          />
+                          {doc.original_filename}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    className="button button--primary"
+                    type="button"
+                    disabled={reconciling || reconcileIds.size < 2}
+                    onClick={() => void handleReconcileImport()}
+                  >
+                    {reconciling
+                      ? "Importing…"
+                      : `Import & reconcile ${reconcileIds.size || ""} file${reconcileIds.size === 1 ? "" : "s"}`}
+                  </button>
+                  {reconcileIds.size === 1 && (
+                    <p className="fin-import-hint">Select at least one more file to reconcile against.</p>
+                  )}
+
+                  {reconcileError && (
+                    <p className="document-error" style={{ marginTop: 12 }}>{reconcileError}</p>
+                  )}
+
+                  {reconcileResult && (
+                    <div className="fin-import-result">
+                      <div>
+                        Imported <strong>{reconcileResult.imported_count}</strong> transaction
+                        {reconcileResult.imported_count !== 1 ? "s" : ""}.
+                        {reconcileResult.exact_duplicate_skipped_count > 0 &&
+                          ` Skipped ${reconcileResult.exact_duplicate_skipped_count} exact duplicate row(s).`}
+                        {reconcileResult.invoice_matched_skipped_count > 0 &&
+                          ` ${reconcileResult.invoice_matched_skipped_count} invoice(s) matched to a bank payment and weren't double-counted.`}
+                        {reconcileResult.internal_transfer_count > 0 &&
+                          ` ${reconcileResult.internal_transfer_count} internal transfer(s) detected and excluded from income/expenses.`}
+                      </div>
+
+                      {(reconcileResult.matches.length > 0 || reconcileResult.flags.length > 0) && (
+                        <ul className="fin-reconcile-reasons">
+                          {reconcileResult.matches.map((m, i) => (
+                            <li key={`m-${i}`}>
+                              <strong>{m.match_type === "invoice_payment_match" ? "Matched" : "Transfer"}</strong>
+                              {" "}({m.confidence} confidence): {m.reason}
+                            </li>
+                          ))}
+                          {reconcileResult.flags.map((f, i) => (
+                            <li key={`f-${i}`} className={f.should_double_count ? "fin-reconcile-reason--review" : undefined}>
+                              <strong>{f.flag_type.replace(/_/g, " ")}</strong>
+                              {" "}({f.confidence} confidence): {f.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {reconcileResult.warnings.length > 0 && (
+                        <details style={{ marginTop: 6 }}>
+                          <summary style={{ cursor: "pointer", fontSize: 11 }}>
+                            {reconcileResult.warnings.length} warning
+                            {reconcileResult.warnings.length !== 1 ? "s" : ""}
+                          </summary>
+                          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 11 }}>
+                            {reconcileResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
@@ -840,6 +991,260 @@ function TransactionTable({
   );
 }
 
+// ── reports panel ──────────────────────────────────────────────────────────────
+
+function ReportsPanel() {
+  const { getIdToken } = useAuth();
+  const [reports, setReports] = useState<FinancialReportListItem[]>([]);
+  const [loadingReports, setLoadingReports] = useState(true);
+  const [selected, setSelected] = useState<FinancialReport | null>(null);
+  const [loadingSelected, setLoadingSelected] = useState(false);
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchReports = useCallback(async () => {
+    setLoadingReports(true);
+    try {
+      const idToken = await getIdToken();
+      setReports(await listFinancialReports(idToken));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load reports");
+    } finally {
+      setLoadingReports(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => {
+    void fetchReports();
+  }, [fetchReports]);
+
+  async function handleSelectReport(id: string) {
+    setLoadingSelected(true);
+    setError(null);
+    try {
+      const idToken = await getIdToken();
+      setSelected(await getFinancialReport(idToken, id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load report");
+    } finally {
+      setLoadingSelected(false);
+    }
+  }
+
+  async function handleGenerate(e: FormEvent) {
+    e.preventDefault();
+    if (!periodStart || !periodEnd) {
+      setError("Start and end dates are required.");
+      return;
+    }
+    if (periodEnd < periodStart) {
+      setError("End date must be on or after the start date.");
+      return;
+    }
+    setError(null);
+    setGenerating(true);
+    try {
+      const idToken = await getIdToken();
+      const report = await generateFinancialReport(idToken, {
+        period_start: periodStart,
+        period_end: periodEnd,
+      });
+      setSelected(report);
+      await fetchReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate report");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const reportJson = selected?.report_json;
+
+  return (
+    <div className="fin-reports">
+      <form className="fin-import-form" onSubmit={(e) => void handleGenerate(e)}>
+        <label>
+          Period start
+          <input
+            type="date"
+            value={periodStart}
+            onChange={(e) => setPeriodStart(e.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Period end
+          <input
+            type="date"
+            value={periodEnd}
+            onChange={(e) => setPeriodEnd(e.target.value)}
+            required
+          />
+        </label>
+        <button className="table-action" type="submit" disabled={generating}>
+          {generating ? "Generating…" : "Generate report"}
+        </button>
+      </form>
+
+      {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
+
+      <div className="fin-reports-layout">
+        <div className="fin-reports-list">
+          <h2>Past reports</h2>
+          {loadingReports ? (
+            <p style={{ color: "#7a837f", fontSize: 13 }}>Loading…</p>
+          ) : reports.length === 0 ? (
+            <div className="empty-state">No reports generated yet.</div>
+          ) : (
+            <ul className="fin-reports-list__items">
+              {reports.map((r) => (
+                <li key={r.id}>
+                  <button
+                    className={`fin-reports-list__item${selected?.id === r.id ? " fin-reports-list__item--active" : ""}`}
+                    type="button"
+                    onClick={() => void handleSelectReport(r.id)}
+                  >
+                    <span>{r.period_start} → {r.period_end}</span>
+                    <span
+                      className={r.executive_summary.net_income >= 0 ? "fin-stat--net-pos" : "fin-stat--net-neg"}
+                    >
+                      {r.executive_summary.net_income >= 0 ? "+" : "−"}
+                      {fmtUsd(r.executive_summary.net_income)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="fin-reports-detail">
+          {loadingSelected ? (
+            <p style={{ color: "#7a837f", fontSize: 13 }}>Loading report…</p>
+          ) : !reportJson ? (
+            <div className="empty-state">
+              Generate a report above, or select one from the list, to see the board packet.
+            </div>
+          ) : (
+            <>
+              <div className="fin-summary">
+                <div className="fin-stat fin-stat--income">
+                  <span className="fin-stat__label">Income</span>
+                  <span className="fin-stat__value">{fmtUsd(reportJson.executive_summary.total_income)}</span>
+                </div>
+                <div className="fin-stat fin-stat--expense">
+                  <span className="fin-stat__label">Expenses</span>
+                  <span className="fin-stat__value">{fmtUsd(reportJson.executive_summary.total_expenses)}</span>
+                </div>
+                <div className={`fin-stat ${reportJson.executive_summary.net_income >= 0 ? "fin-stat--net-pos" : "fin-stat--net-neg"}`}>
+                  <span className="fin-stat__label">Net income</span>
+                  <span className="fin-stat__value">
+                    {reportJson.executive_summary.net_income >= 0 ? "+" : "−"}
+                    {fmtUsd(reportJson.executive_summary.net_income)}
+                  </span>
+                </div>
+              </div>
+
+              {reportJson.notes.length > 0 && (
+                <ul className="fin-report-notes">
+                  {reportJson.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+
+              <h2>Expenses by category</h2>
+              {reportJson.expenses_by_category.length === 0 ? (
+                <div className="empty-state">No expenses in this period.</div>
+              ) : (
+                <div className="document-table-wrap">
+                  <table className="document-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportJson.expenses_by_category.map((row) => (
+                        <tr key={row.category}>
+                          <td>{row.category}</td>
+                          <td>{fmtUsd(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <h2>Income by category</h2>
+              {reportJson.income_by_category.length === 0 ? (
+                <div className="empty-state">No income in this period.</div>
+              ) : (
+                <div className="document-table-wrap">
+                  <table className="document-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportJson.income_by_category.map((row) => (
+                        <tr key={row.category}>
+                          <td>{row.category}</td>
+                          <td>{fmtUsd(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {reportJson.budget_vs_actual.length > 0 && (
+                <>
+                  <h2>Budget vs. actual</h2>
+                  <div className="document-table-wrap">
+                    <table className="document-table">
+                      <thead>
+                        <tr>
+                          <th>Category</th>
+                          <th>Budget</th>
+                          <th>Actual</th>
+                          <th>Variance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportJson.budget_vs_actual.map((row) => {
+                          const overBudget = row.variance !== null && row.variance < 0;
+                          return (
+                            <tr key={row.category} className={overBudget ? "fin-budget-row--over" : undefined}>
+                              <td>{row.category}</td>
+                              <td>{row.budget_amount === null ? "—" : fmtUsd(row.budget_amount)}</td>
+                              <td>{fmtUsd(row.actual_amount)}</td>
+                              <td>
+                                {row.variance === null
+                                  ? "—"
+                                  : `${overBudget ? "Over by " : "Under by "}${fmtUsd(row.variance)}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 const EMPTY_FILTERS: Filters = {
@@ -852,6 +1257,7 @@ const EMPTY_FILTERS: Filters = {
 
 export function FinancialPage() {
   const { user, getIdToken } = useAuth();
+  const [tab, setTab] = useState<"transactions" | "reports">("transactions");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
@@ -1052,90 +1458,117 @@ export function FinancialPage() {
         </p>
       </div>
 
-      {!loadingDocs && (
-        <ImportPanel csvDocuments={csvDocuments} onImported={() => void fetchTransactions()} />
-      )}
+      <div className="fin-tabs" role="tablist" aria-label="Finances sections">
+        <button
+          className={`fin-tab${tab === "transactions" ? " fin-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={tab === "transactions"}
+          onClick={() => setTab("transactions")}
+        >
+          Transactions
+        </button>
+        <button
+          className={`fin-tab${tab === "reports" ? " fin-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={tab === "reports"}
+          onClick={() => setTab("reports")}
+        >
+          Reports
+        </button>
+      </div>
 
-      <AddTransactionPanel onCreated={() => void fetchTransactions()} />
-
-      {!loadingTx && transactions.length > 0 && (
+      {tab === "reports" ? (
+        <ReportsPanel />
+      ) : (
         <>
-          <SummaryBar transactions={filtered} />
+          {!loadingDocs && (
+            <ImportPanel csvDocuments={csvDocuments} onImported={() => void fetchTransactions()} />
+          )}
 
-          <div className="fin-filters-row">
-            <FilterBar
-              filters={filters}
-              onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
-              onClear={() => setFilters(EMPTY_FILTERS)}
-              onAiCategorize={() => void handleAiCategorize()}
-              aiCategorizing={aiCategorizing}
-              aiResult={aiCategorizeResult}
-            />
+          <AddTransactionPanel onCreated={() => void fetchTransactions()} />
+
+          {!loadingTx && transactions.length > 0 && (
+            <>
+              <SummaryBar transactions={filtered} />
+
+              <div className="fin-filters-row">
+                <FilterBar
+                  filters={filters}
+                  onChange={(partial) => setFilters((f) => ({ ...f, ...partial }))}
+                  onClear={() => setFilters(EMPTY_FILTERS)}
+                  onAiCategorize={() => void handleAiCategorize()}
+                  aiCategorizing={aiCategorizing}
+                  aiResult={aiCategorizeResult}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="document-list">
+            <div className="document-list__heading">
+              <h2>Transactions{hasFilters ? " (filtered)" : ""}</h2>
+              <span>
+                {filtered.length !== transactions.length
+                  ? `${filtered.length} of ${transactions.length}`
+                  : `${transactions.length} total`}
+                {transactions.filter((t) => !t.category || t.category === "Uncategorized").length > 0 && (
+                  <span style={{ marginLeft: 12, color: "#86631e" }}>
+                    · {transactions.filter((t) => !t.category || t.category === "Uncategorized").length} uncategorized
+                  </span>
+                )}
+              </span>
+            </div>
+
+            {selectedIds.size > 0 && (
+              <div className="fin-bulk-toolbar">
+                <span>{selectedIds.size} selected</span>
+                <button
+                  className="table-action table-action--danger"
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => void handleBulkDelete()}
+                >
+                  {deleting ? "Deleting…" : `Delete ${selectedIds.size}`}
+                </button>
+                <button
+                  className="table-action table-action--muted"
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+
+            {loadingTx ? (
+              <p style={{ color: "#7a837f", fontSize: 13 }}>Loading…</p>
+            ) : txError ? (
+              <p className="document-error">{txError}</p>
+            ) : transactions.length === 0 ? (
+              <div className="empty-state">
+                No transactions yet. Import a CSV document above to get started.
+              </div>
+            ) : (
+              <TransactionTable
+                transactions={sortedFiltered}
+                editingId={editingId}
+                onEdit={setEditingId}
+                onSave={handleSave}
+                onCancelEdit={() => setEditingId(null)}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onToggleAll={handleToggleAll}
+                onSingleDelete={(id) => void handleSingleDelete(id)}
+                sortCol={sortCol}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+            )}
           </div>
         </>
       )}
-
-      <div className="document-list">
-        <div className="document-list__heading">
-          <h2>Transactions{hasFilters ? " (filtered)" : ""}</h2>
-          <span>
-            {filtered.length !== transactions.length
-              ? `${filtered.length} of ${transactions.length}`
-              : `${transactions.length} total`}
-            {transactions.filter((t) => !t.category || t.category === "Uncategorized").length > 0 && (
-              <span style={{ marginLeft: 12, color: "#86631e" }}>
-                · {transactions.filter((t) => !t.category || t.category === "Uncategorized").length} uncategorized
-              </span>
-            )}
-          </span>
-        </div>
-
-        {selectedIds.size > 0 && (
-          <div className="fin-bulk-toolbar">
-            <span>{selectedIds.size} selected</span>
-            <button
-              className="table-action table-action--danger"
-              type="button"
-              disabled={deleting}
-              onClick={() => void handleBulkDelete()}
-            >
-              {deleting ? "Deleting…" : `Delete ${selectedIds.size}`}
-            </button>
-            <button
-              className="table-action table-action--muted"
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              Clear selection
-            </button>
-          </div>
-        )}
-
-        {loadingTx ? (
-          <p style={{ color: "#7a837f", fontSize: 13 }}>Loading…</p>
-        ) : txError ? (
-          <p className="document-error">{txError}</p>
-        ) : transactions.length === 0 ? (
-          <div className="empty-state">
-            No transactions yet. Import a CSV document above to get started.
-          </div>
-        ) : (
-          <TransactionTable
-            transactions={sortedFiltered}
-            editingId={editingId}
-            onEdit={setEditingId}
-            onSave={handleSave}
-            onCancelEdit={() => setEditingId(null)}
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-            onToggleAll={handleToggleAll}
-            onSingleDelete={(id) => void handleSingleDelete(id)}
-            sortCol={sortCol}
-            sortDir={sortDir}
-            onSort={handleSort}
-          />
-        )}
-      </div>
     </main>
   );
 }

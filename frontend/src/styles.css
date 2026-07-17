@@ -1074,6 +1074,131 @@ h1 {
   color: #315f50;
 }
 
+.fin-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid rgb(21 63 51 / 12%);
+  margin-bottom: 4px;
+}
+
+.fin-tab {
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: #7a837f;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.fin-tab:hover {
+  color: #315f50;
+}
+
+.fin-tab--active {
+  color: #315f50;
+  border-bottom-color: #315f50;
+}
+
+.fin-reports-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .fin-reports-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fin-reports-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fin-reports-list__item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgb(21 63 51 / 12%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 56%);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fin-reports-list__item:hover {
+  border-color: rgb(21 63 51 / 30%);
+}
+
+.fin-reports-list__item--active {
+  border-color: #315f50;
+  background: rgb(21 63 51 / 6%);
+}
+
+.fin-reports-detail h2 {
+  font-size: 14px;
+  margin: 20px 0 10px;
+}
+
+.fin-reports-detail h2:first-child {
+  margin-top: 0;
+}
+
+.fin-report-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #86631e;
+}
+
+.fin-budget-row--over td {
+  background: rgb(124 52 42 / 8%);
+  color: #7c342a;
+}
+
+.fin-reconcile-checklist {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.fin-reconcile-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.fin-reconcile-reasons {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fin-reconcile-reason--review {
+  color: #86631e;
+}
+
 .tx-row--editing {
   background: rgb(21 63 51 / 3%);
 }

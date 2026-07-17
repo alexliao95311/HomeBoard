@@ -14,7 +14,11 @@ import type {
   DocumentTextChunk,
   DocumentType,
   DocumentUpdateRequest,
+  FinancialReport,
+  FinancialReportGenerateRequest,
+  FinancialReportListItem,
   HealthResponse,
+  ReconciledImportResponse,
   ShareResponse,
   Transaction,
   TransactionCreateRequest,
@@ -503,6 +507,29 @@ export async function uploadCsvTransactions(
   return response.json() as Promise<TransactionUploadCsvResponse>;
 }
 
+export async function importReconciledTransactions(
+  idToken: string,
+  documentIds: string[],
+): Promise<ReconciledImportResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/financials/transactions/import-reconciled`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ document_ids: documentIds }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Reconciled import failed"));
+  }
+
+  return response.json() as Promise<ReconciledImportResponse>;
+}
+
 export class DuplicateTransactionError extends Error {}
 
 export async function createTransaction(
@@ -658,4 +685,55 @@ export async function updateUserSettings(
   }
 
   return response.json() as Promise<UserSettings>;
+}
+
+export async function generateFinancialReport(
+  idToken: string,
+  request: FinancialReportGenerateRequest,
+): Promise<FinancialReport> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/reports/generate`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not generate report"));
+  }
+
+  return response.json() as Promise<FinancialReport>;
+}
+
+export async function listFinancialReports(
+  idToken: string,
+  signal?: AbortSignal,
+): Promise<FinancialReportListItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/reports`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load reports"));
+  }
+
+  return response.json() as Promise<FinancialReportListItem[]>;
+}
+
+export async function getFinancialReport(
+  idToken: string,
+  reportId: string,
+): Promise<FinancialReport> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/reports/${reportId}`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load report"));
+  }
+
+  return response.json() as Promise<FinancialReport>;
 }

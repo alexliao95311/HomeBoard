@@ -15,11 +15,20 @@ from app.config import settings
 from app.database import get_database_session
 from app.models.bank_account import BankAccount
 from app.models.document import Document
+from app.models.financial_report import FinancialReport
 from app.models.transaction import Transaction
 from app.schemas.financial import (
     AiCategorizeResponse,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    ExecutiveSummary,
+    FinancialReportGenerateRequest,
+    FinancialReportListItem,
+    FinancialReportResponse,
+    ReconciledImportRequest,
+    ReconciledImportResponse,
+    ReconciliationFlagOut,
+    ReconciliationMatchOut,
     TransactionCreateRequest,
     TransactionPreview,
     TransactionResponse,
@@ -29,12 +38,19 @@ from app.schemas.financial import (
 )
 from app.schemas.module import ModuleStatus
 from app.services.categorization_service import CATEGORIES, categorize, vendor_key
+from app.services.financial_reconciliation import reconcile_financial_files
+from app.services.financial_report_service import generate_report_json
 from app.services.organization_service import OrganizationContext, get_current_organization
 from app.services.transaction_parser import (
     detect_columns_with_ai,
     get_csv_headers_and_samples,
     parse_transaction_csv,
 )
+
+_FUND_TYPE_BY_SOURCE = {
+    "operating_activity": "operating",
+    "reserve_activity": "reserve",
+}
 
 router = APIRouter()
 
@@ -250,6 +266,138 @@ def upload_transaction_csv(
         warnings=warnings,
         detected_columns=parse_result.detected_columns,
         preview=preview,
+    )
+
+
+@router.post(
+    "/transactions/import-reconciled",
+    response_model=ReconciledImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_reconciled_transactions(
+    request: ReconciledImportRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> ReconciledImportResponse:
+    """Import multiple financial CSVs (e.g. invoice_export + operating_activity +
+    reserve_activity) together, reconciling overlaps before writing transactions.
+
+    Unlike /transactions/upload-csv (one file at a time, no cross-file awareness),
+    this normalizes every file first, then excludes exact duplicates and invoices
+    already covered by a matched bank payment, and marks operating<->reserve
+    transfer legs with transaction_type="transfer" so they don't inflate income
+    or expenses in reports.
+    """
+    documents = list(session.scalars(
+        select(Document).where(
+            Document.id.in_(request.document_ids),
+            Document.organization_id == organization.organization_id,
+        )
+    ))
+    found_ids = {doc.id for doc in documents}
+    missing = [str(doc_id) for doc_id in request.document_ids if doc_id not in found_ids]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document(s) not found: {', '.join(missing)}",
+        )
+
+    files: list[tuple[str, bytes]] = []
+    document_id_by_filename: dict[str, uuid.UUID] = {}
+    for document in documents:
+        if document.content_type not in _CSV_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"'{document.original_filename}' is not a CSV file.",
+            )
+        storage_path = Path(document.storage_path)
+        if not storage_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"File not found on disk for '{document.original_filename}'.",
+            )
+        files.append((document.original_filename, storage_path.read_bytes()))
+        document_id_by_filename[document.original_filename] = document.id
+
+    result = reconcile_financial_files(files)
+
+    exact_duplicate_excluded_ids: set[str] = set()
+    for flag in result.duplicate_flags:
+        if flag.flag_type == "exact_duplicate":
+            exact_duplicate_excluded_ids.update(flag.record_ids[1:])
+
+    invoice_matched_excluded_ids = {
+        m.invoice_record_id
+        for m in result.reconciliation_matches
+        if m.match_type == "invoice_payment_match"
+    }
+
+    transfer_leg_ids: set[str] = set()
+    for m in result.reconciliation_matches:
+        if m.match_type == "internal_transfer":
+            transfer_leg_ids.add(m.from_record_id)
+            transfer_leg_ids.add(m.to_record_id)
+
+    bank_account_cache: dict[str, uuid.UUID] = {}
+    imported_count = 0
+
+    for record in result.normalized_records:
+        if record.id in exact_duplicate_excluded_ids or record.id in invoice_matched_excluded_ids:
+            continue
+
+        effective_date = record.effective_date()
+        if effective_date is None or record.amount == 0:
+            continue
+
+        if record.id in transfer_leg_ids:
+            transaction_type = "transfer"
+        elif record.amount > 0:
+            transaction_type = "income"
+        else:
+            transaction_type = "expense"
+
+        fund_type = _FUND_TYPE_BY_SOURCE.get(record.source_type)
+
+        bank_account_id: uuid.UUID | None = None
+        if fund_type is not None:
+            account_name = fund_type.capitalize()
+            if account_name not in bank_account_cache:
+                account = _find_or_create_bank_account(
+                    session, organization.organization_id, account_name, fund_type,
+                )
+                bank_account_cache[account_name] = account.id
+            bank_account_id = bank_account_cache[account_name]
+
+        description = record.description or record.vendor_name or "Imported transaction"
+        category, confidence = categorize(description)
+
+        session.add(Transaction(
+            organization_id=organization.organization_id,
+            bank_account_id=bank_account_id,
+            source_document_id=document_id_by_filename.get(record.source_file),
+            date=effective_date,
+            description=description,
+            amount=record.amount,
+            transaction_type=transaction_type,
+            vendor_name=record.vendor_name,
+            category=category,
+            confidence_score=Decimal(str(confidence)),
+            fund_type=fund_type,
+        ))
+        imported_count += 1
+
+    session.commit()
+
+    return ReconciledImportResponse(
+        imported_count=imported_count,
+        exact_duplicate_skipped_count=len(exact_duplicate_excluded_ids),
+        invoice_matched_skipped_count=len(invoice_matched_excluded_ids),
+        internal_transfer_count=sum(
+            1 for m in result.reconciliation_matches if m.match_type == "internal_transfer"
+        ),
+        matches=[ReconciliationMatchOut(**m.to_dict()) for m in result.reconciliation_matches],
+        flags=[ReconciliationFlagOut(**f.to_dict()) for f in result.duplicate_flags],
+        warnings=result.warnings,
     )
 
 
@@ -538,3 +686,78 @@ def list_transactions(
         query = query.where(Transaction.date <= date_to)
 
     return list(session.scalars(query))
+
+
+@router.post(
+    "/reports/generate",
+    response_model=FinancialReportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_financial_report(
+    request: FinancialReportGenerateRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> FinancialReport:
+    if request.period_end < request.period_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="period_end must be on or after period_start",
+        )
+
+    report_json = generate_report_json(
+        session,
+        organization.organization_id,
+        request.period_start,
+        request.period_end,
+        request.budget_id,
+    )
+
+    report = FinancialReport(
+        organization_id=organization.organization_id,
+        period_start=request.period_start,
+        period_end=request.period_end,
+        report_json=report_json,
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return report
+
+
+@router.get("/reports", response_model=list[FinancialReportListItem])
+def list_financial_reports(
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> list[FinancialReportListItem]:
+    reports = session.scalars(
+        select(FinancialReport)
+        .where(FinancialReport.organization_id == organization.organization_id)
+        .order_by(FinancialReport.created_at.desc())
+    )
+    return [
+        FinancialReportListItem(
+            id=r.id,
+            period_start=r.period_start,
+            period_end=r.period_end,
+            created_at=r.created_at,
+            executive_summary=ExecutiveSummary(**r.report_json["executive_summary"]),
+        )
+        for r in reports
+    ]
+
+
+@router.get("/reports/{report_id}", response_model=FinancialReportResponse)
+def get_financial_report(
+    report_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> FinancialReport:
+    report = session.scalar(
+        select(FinancialReport).where(
+            FinancialReport.id == report_id,
+            FinancialReport.organization_id == organization.organization_id,
+        )
+    )
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return report

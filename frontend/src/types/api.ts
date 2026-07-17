@@ -268,6 +268,96 @@ export const TRANSACTION_CATEGORIES = [
   "Uncategorized",
 ] as const;
 
+export interface FinancialReportGenerateRequest {
+  period_start: string;
+  period_end: string;
+  budget_id?: string | null;
+}
+
+export interface ExecutiveSummary {
+  total_income: number;
+  total_expenses: number;
+  net_income: number;
+}
+
+export interface CategoryAmount {
+  category: string;
+  amount: number;
+}
+
+export interface BudgetVsActualLine {
+  category: string;
+  budget_amount: number | null;
+  actual_amount: number;
+  variance: number | null;
+}
+
+export interface FinancialReportJson {
+  period_start: string;
+  period_end: string;
+  executive_summary: ExecutiveSummary;
+  expenses_by_category: CategoryAmount[];
+  income_by_category: CategoryAmount[];
+  budget_vs_actual: BudgetVsActualLine[];
+  ending_cash_estimate: number;
+  notes: string[];
+}
+
+export interface FinancialReport {
+  id: string;
+  organization_id: string;
+  period_start: string;
+  period_end: string;
+  report_json: FinancialReportJson;
+  created_at: string;
+}
+
+export interface FinancialReportListItem {
+  id: string;
+  period_start: string;
+  period_end: string;
+  created_at: string;
+  executive_summary: ExecutiveSummary;
+}
+
+export interface ReconciledImportRequest {
+  document_ids: string[];
+}
+
+export interface ReconciliationMatch {
+  match_type: "invoice_payment_match" | "internal_transfer";
+  confidence: "high" | "medium" | "low";
+  amount: number;
+  should_double_count: boolean;
+  reason: string;
+  invoice_record_id?: string | null;
+  bank_record_id?: string | null;
+  from_record_id?: string | null;
+  to_record_id?: string | null;
+  net_effect?: number | null;
+  should_count_as_income?: boolean | null;
+  should_count_as_expense?: boolean | null;
+}
+
+export interface ReconciliationFlag {
+  flag_type: string;
+  confidence: "high" | "medium" | "low";
+  record_ids: string[];
+  amount: number | null;
+  reason: string;
+  should_double_count: boolean;
+}
+
+export interface ReconciledImportResponse {
+  imported_count: number;
+  exact_duplicate_skipped_count: number;
+  invoice_matched_skipped_count: number;
+  internal_transfer_count: number;
+  matches: ReconciliationMatch[];
+  flags: ReconciliationFlag[];
+  warnings: string[];
+}
+
 export const AI_MODELS = [
   { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
   { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", provider: "Anthropic" },

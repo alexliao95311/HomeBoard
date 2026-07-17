@@ -79,3 +79,95 @@ class BulkDeleteResponse(BaseModel):
 class AiCategorizeResponse(BaseModel):
     updated_count: int
     skipped_count: int  # transactions where AI returned an invalid/unknown category
+
+
+class ExecutiveSummary(BaseModel):
+    total_income: float
+    total_expenses: float
+    net_income: float
+
+
+class CategoryAmount(BaseModel):
+    category: str
+    amount: float
+
+
+class BudgetVsActualLine(BaseModel):
+    category: str
+    budget_amount: float | None
+    actual_amount: float
+    variance: float | None
+
+
+class FinancialReportJson(BaseModel):
+    period_start: date
+    period_end: date
+    executive_summary: ExecutiveSummary
+    expenses_by_category: list[CategoryAmount]
+    income_by_category: list[CategoryAmount]
+    budget_vs_actual: list[BudgetVsActualLine]
+    ending_cash_estimate: float
+    notes: list[str]
+
+
+class FinancialReportGenerateRequest(BaseModel):
+    period_start: date
+    period_end: date
+    budget_id: uuid.UUID | None = None
+
+
+class FinancialReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    period_start: date
+    period_end: date
+    report_json: FinancialReportJson
+    created_at: datetime
+
+
+class FinancialReportListItem(BaseModel):
+    id: uuid.UUID
+    period_start: date
+    period_end: date
+    created_at: datetime
+    executive_summary: ExecutiveSummary
+
+
+class ReconciledImportRequest(BaseModel):
+    document_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class ReconciliationMatchOut(BaseModel):
+    match_type: Literal["invoice_payment_match", "internal_transfer"]
+    confidence: Literal["high", "medium", "low"]
+    amount: float
+    should_double_count: bool
+    reason: str
+    invoice_record_id: str | None = None
+    bank_record_id: str | None = None
+    from_record_id: str | None = None
+    to_record_id: str | None = None
+    net_effect: float | None = None
+    should_count_as_income: bool | None = None
+    should_count_as_expense: bool | None = None
+
+
+class ReconciliationFlagOut(BaseModel):
+    flag_type: str
+    confidence: Literal["high", "medium", "low"]
+    record_ids: list[str]
+    amount: float | None
+    reason: str
+    should_double_count: bool
+
+
+class ReconciledImportResponse(BaseModel):
+    imported_count: int
+    exact_duplicate_skipped_count: int
+    invoice_matched_skipped_count: int
+    internal_transfer_count: int
+    matches: list[ReconciliationMatchOut]
+    flags: list[ReconciliationFlagOut]
+    warnings: list[str]
