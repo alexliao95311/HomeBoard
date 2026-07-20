@@ -173,3 +173,41 @@ class ReconciledImportResponse(BaseModel):
     matches: list[ReconciliationMatchOut]
     flags: list[ReconciliationFlagOut]
     warnings: list[str]
+
+
+class BudgetLineInput(BaseModel):
+    category: str
+    monthly_budget: Decimal | None = None
+    annual_budget: Decimal | None = None
+    fund_type: str | None = None
+
+
+class BudgetCreateRequest(BaseModel):
+    fiscal_year: int
+    lines: list[BudgetLineInput] = Field(min_length=1)
+
+
+class BudgetLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    category: str
+    monthly_budget: Decimal | None
+    annual_budget: Decimal | None
+    fund_type: str | None
+
+
+class BudgetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    fiscal_year: int
+    created_at: datetime
+    lines: list[BudgetLineOut]
+
+
+class BudgetListItem(BaseModel):
+    id: uuid.UUID
+    fiscal_year: int
+    created_at: datetime
+    line_count: int

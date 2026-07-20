@@ -1105,13 +1105,60 @@ h1 {
 .fin-reports-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
-  gap: 20px;
+  gap: 24px;
   align-items: start;
+  margin-top: 32px;
+}
+
+.fin-report-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(170px, 0.65fr) auto;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid rgb(21 63 51 / 14%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 58%);
+}
+
+.fin-report-form__submit {
+  min-height: 42px;
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
+.fin-reports-list h2 {
+  margin-bottom: 12px;
+  color: #25312c;
+  font-size: 16px;
+}
+
+.fin-reports-list > .empty-state,
+.fin-reports-detail > .empty-state {
+  display: grid;
+  min-height: 136px;
+  place-items: center;
+  padding: 28px;
+  line-height: 1.55;
 }
 
 @media (max-width: 900px) {
+  .fin-report-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fin-report-form__submit {
+    width: 100%;
+  }
+
   .fin-reports-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .fin-report-form {
+    grid-template-columns: 1fr;
+    padding: 16px;
   }
 }
 

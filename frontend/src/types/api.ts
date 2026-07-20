@@ -360,6 +360,40 @@ export interface ReconciledImportResponse {
   warnings: string[];
 }
 
+export interface BudgetLineInput {
+  category: string;
+  monthly_budget?: string | null;
+  annual_budget?: string | null;
+  fund_type?: string | null;
+}
+
+export interface BudgetCreateRequest {
+  fiscal_year: number;
+  lines: BudgetLineInput[];
+}
+
+export interface BudgetLine {
+  id: string;
+  category: string;
+  monthly_budget: string | null;
+  annual_budget: string | null;
+  fund_type: string | null;
+}
+
+export interface Budget {
+  id: string;
+  fiscal_year: number;
+  created_at: string;
+  lines: BudgetLine[];
+}
+
+export interface BudgetListItem {
+  id: string;
+  fiscal_year: number;
+  created_at: string;
+  line_count: number;
+}
+
 export const AI_MODELS = [
   { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
   { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", provider: "Anthropic" },

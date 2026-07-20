@@ -13,6 +13,9 @@ import type {
   DocumentProcessResult,
   DocumentTextChunk,
   DocumentType,
+  Budget,
+  BudgetCreateRequest,
+  BudgetListItem,
   DocumentUpdateRequest,
   FinancialReport,
   FinancialReportGenerateRequest,
@@ -736,4 +739,49 @@ export async function getFinancialReport(
   }
 
   return response.json() as Promise<FinancialReport>;
+}
+
+export async function createBudget(
+  idToken: string,
+  request: BudgetCreateRequest,
+): Promise<Budget> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/budgets`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not create budget"));
+  }
+
+  return response.json() as Promise<Budget>;
+}
+
+export async function listBudgets(idToken: string, signal?: AbortSignal): Promise<BudgetListItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/budgets`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load budgets"));
+  }
+
+  return response.json() as Promise<BudgetListItem[]>;
+}
+
+export async function getBudget(idToken: string, budgetId: string): Promise<Budget> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/financials/budgets/${budgetId}`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorDetail(response, "Could not load budget"));
+  }
+
+  return response.json() as Promise<Budget>;
 }

@@ -14,11 +14,16 @@ from app.ai.providers.openrouter_provider import AIProviderError, OpenRouterProv
 from app.config import settings
 from app.database import get_database_session
 from app.models.bank_account import BankAccount
+from app.models.budget import Budget, BudgetLine
 from app.models.document import Document
 from app.models.financial_report import FinancialReport
 from app.models.transaction import Transaction
 from app.schemas.financial import (
     AiCategorizeResponse,
+    BudgetCreateRequest,
+    BudgetListItem,
+    BudgetLineOut,
+    BudgetResponse,
     BulkDeleteRequest,
     BulkDeleteResponse,
     ExecutiveSummary,
@@ -808,3 +813,89 @@ def get_financial_report(
     if report is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     return report
+
+
+@router.post("/budgets", response_model=BudgetResponse, status_code=status.HTTP_201_CREATED)
+def create_budget(
+    request: BudgetCreateRequest,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> BudgetResponse:
+    budget = Budget(organization_id=organization.organization_id, fiscal_year=request.fiscal_year)
+    session.add(budget)
+    session.flush()
+
+    lines = [
+        BudgetLine(
+            budget_id=budget.id,
+            category=line.category,
+            monthly_budget=line.monthly_budget,
+            annual_budget=line.annual_budget,
+            fund_type=line.fund_type,
+        )
+        for line in request.lines
+    ]
+    session.add_all(lines)
+    session.commit()
+    for line in lines:
+        session.refresh(line)
+
+    return BudgetResponse(
+        id=budget.id,
+        fiscal_year=budget.fiscal_year,
+        created_at=budget.created_at,
+        lines=[BudgetLineOut.model_validate(line) for line in lines],
+    )
+
+
+@router.get("/budgets", response_model=list[BudgetListItem])
+def list_budgets(
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> list[BudgetListItem]:
+    budgets = list(session.scalars(
+        select(Budget)
+        .where(Budget.organization_id == organization.organization_id)
+        .order_by(Budget.created_at.desc())
+    ))
+    line_counts: dict[uuid.UUID, int] = {}
+    if budgets:
+        lines = session.scalars(
+            select(BudgetLine).where(BudgetLine.budget_id.in_([b.id for b in budgets]))
+        )
+        for line in lines:
+            line_counts[line.budget_id] = line_counts.get(line.budget_id, 0) + 1
+
+    return [
+        BudgetListItem(
+            id=b.id,
+            fiscal_year=b.fiscal_year,
+            created_at=b.created_at,
+            line_count=line_counts.get(b.id, 0),
+        )
+        for b in budgets
+    ]
+
+
+@router.get("/budgets/{budget_id}", response_model=BudgetResponse)
+def get_budget(
+    budget_id: uuid.UUID,
+    organization: Annotated[OrganizationContext, Depends(get_current_organization)],
+    session: Annotated[Session, Depends(get_database_session)],
+) -> BudgetResponse:
+    budget = session.scalar(
+        select(Budget).where(
+            Budget.id == budget_id,
+            Budget.organization_id == organization.organization_id,
+        )
+    )
+    if budget is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget not found")
+
+    lines = list(session.scalars(select(BudgetLine).where(BudgetLine.budget_id == budget.id)))
+    return BudgetResponse(
+        id=budget.id,
+        fiscal_year=budget.fiscal_year,
+        created_at=budget.created_at,
+        lines=[BudgetLineOut.model_validate(line) for line in lines],
+    )

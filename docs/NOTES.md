@@ -12,9 +12,10 @@ are implemented. The financial module now covers transaction CSV import
 (single-file and multi-file reconciled), manual transaction entry, rule-based
 + AI categorization, a reconciliation engine that catches cross-file
 duplicate/invoice/transfer overlaps, and board-facing report generation with
-a `/financial` Reports tab. Reconciliation now works incrementally across
-separate imports, not just within one batch. The current Alembic revision is
-`20260717_0007`, and all 48 backend tests pass.
+a `/financial` Reports tab (now with a Budgets tab too, for simple manual
+budget entry). Reconciliation now works incrementally across separate
+imports, not just within one batch. The current Alembic revision is
+`20260717_0007`, and all 51 backend tests pass.
 
 ## Start the Project
 
@@ -459,14 +460,21 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
   persisting to the existing `FinancialReport.report_json` column.
 - [x] 4 tests in `test_financial_reports.py` covering income/expense/variance
   math, the no-budget case, inverted-period rejection, and 404.
-- [ ] Budget creation/upload API and UI — `Budget`/`BudgetLine` tables exist
-  but nothing can create one yet, so `budget_vs_actual` is empty until that's
-  built.
+- [x] Added lightweight manual budget entry: `POST /api/v1/financials/budgets`
+  (fiscal year + a list of category/monthly_budget lines),
+  `GET /api/v1/financials/budgets`, `GET /api/v1/financials/budgets/{id}`.
+  Deliberately minimal — no upload/parsing, no edit/delete — just enough for
+  `budget_vs_actual` to have real data. 3 tests in `test_budgets.py`,
+  including report generation actually picking up a created budget.
 
 ### 23. Financial Reports UI
 
-- [x] Added **Transactions** / **Reports** tabs to `/financial`.
-- [x] Reports tab: date-range generate form, past-reports list, executive
+- [x] Added **Transactions** / **Budgets** / **Reports** tabs to `/financial`.
+- [x] Budgets tab: fiscal-year input + a table of categories with an
+  optional monthly-budget field each (blank categories are skipped), plus a
+  list of saved budgets.
+- [x] Reports tab: date-range generate form with a budget picker (populated
+  from the Budgets tab's saved budgets), past-reports list, executive
   summary cards, expenses-by-category and income-by-category tables, and a
   budget-vs-actual table (only rendered when present) with over-budget rows
   highlighted.
@@ -476,8 +484,7 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
 
 1. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.
-2. Build budget creation/upload so `budget_vs_actual` has real data to show.
-3. Add PDF export for financial reports.
+2. Add PDF export for financial reports.
 
 ---
 

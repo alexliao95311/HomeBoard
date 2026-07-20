@@ -3,12 +3,14 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   aiCategorizeTransactions,
   bulkDeleteTransactions,
+  createBudget,
   createTransaction,
   deleteTransaction,
   DuplicateTransactionError,
   generateFinancialReport,
   getFinancialReport,
   importReconciledTransactions,
+  listBudgets,
   listDocuments,
   listFinancialReports,
   listTransactions,
@@ -17,6 +19,7 @@ import {
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type {
+  BudgetListItem,
   Document,
   FinancialReport,
   FinancialReportListItem,
@@ -1037,6 +1040,8 @@ function ReportsPanel() {
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
+  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
+  const [budgetId, setBudgetId] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1055,6 +1060,17 @@ function ReportsPanel() {
   useEffect(() => {
     void fetchReports();
   }, [fetchReports]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const idToken = await getIdToken();
+        setBudgets(await listBudgets(idToken));
+      } catch {
+        // budgets are optional for report generation — fail silently
+      }
+    })();
+  }, [getIdToken]);
 
   async function handleSelectReport(id: string) {
     setLoadingSelected(true);
@@ -1086,6 +1102,7 @@ function ReportsPanel() {
       const report = await generateFinancialReport(idToken, {
         period_start: periodStart,
         period_end: periodEnd,
+        budget_id: budgetId || undefined,
       });
       setSelected(report);
       await fetchReports();
@@ -1100,7 +1117,7 @@ function ReportsPanel() {
 
   return (
     <div className="fin-reports">
-      <form className="fin-import-form" onSubmit={(e) => void handleGenerate(e)}>
+      <form className="fin-import-form fin-report-form" onSubmit={(e) => void handleGenerate(e)}>
         <label>
           Period start
           <input
@@ -1119,7 +1136,18 @@ function ReportsPanel() {
             required
           />
         </label>
-        <button className="table-action" type="submit" disabled={generating}>
+        <label>
+          Budget <span className="field-optional">(optional)</span>
+          <select value={budgetId} onChange={(e) => setBudgetId(e.target.value)}>
+            <option value="">No budget</option>
+            {budgets.map((b) => (
+              <option key={b.id} value={b.id}>
+                FY{b.fiscal_year} ({b.line_count} categor{b.line_count === 1 ? "y" : "ies"})
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="button button--primary fin-report-form__submit" type="submit" disabled={generating}>
           {generating ? "Generating…" : "Generate report"}
         </button>
       </form>
@@ -1281,6 +1309,141 @@ function ReportsPanel() {
   );
 }
 
+// ── budgets panel ──────────────────────────────────────────────────────────────
+
+const BUDGET_CATEGORIES = TRANSACTION_CATEGORIES.filter((c) => c !== "Uncategorized");
+
+function BudgetsPanel() {
+  const { getIdToken } = useAuth();
+  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
+  const [loadingBudgets, setLoadingBudgets] = useState(true);
+  const [fiscalYear, setFiscalYear] = useState(String(new Date().getFullYear()));
+  const [monthlyAmounts, setMonthlyAmounts] = useState<Record<string, string>>({});
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchBudgets = useCallback(async () => {
+    setLoadingBudgets(true);
+    try {
+      const idToken = await getIdToken();
+      setBudgets(await listBudgets(idToken));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load budgets");
+    } finally {
+      setLoadingBudgets(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => {
+    void fetchBudgets();
+  }, [fetchBudgets]);
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    const year = parseInt(fiscalYear, 10);
+    if (!year) {
+      setError("A fiscal year is required.");
+      return;
+    }
+    const lines = Object.entries(monthlyAmounts)
+      .filter(([, amount]) => amount.trim() !== "" && parseFloat(amount) > 0)
+      .map(([category, amount]) => ({ category, monthly_budget: amount.trim() }));
+
+    if (lines.length === 0) {
+      setError("Enter a monthly budget for at least one category.");
+      return;
+    }
+
+    setError(null);
+    setCreating(true);
+    try {
+      const idToken = await getIdToken();
+      await createBudget(idToken, { fiscal_year: year, lines });
+      setMonthlyAmounts({});
+      await fetchBudgets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create budget");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fin-reports">
+      <form className="fin-import-form" onSubmit={(e) => void handleCreate(e)} style={{ flexWrap: "wrap" }}>
+        <label>
+          Fiscal year
+          <input
+            type="number"
+            value={fiscalYear}
+            onChange={(e) => setFiscalYear(e.target.value)}
+            required
+          />
+        </label>
+        <button className="table-action" type="submit" disabled={creating} style={{ alignSelf: "end" }}>
+          {creating ? "Saving…" : "Save budget"}
+        </button>
+      </form>
+
+      <p className="fin-import-hint">
+        Enter a monthly budget for any categories you want to track. Categories left blank are
+        skipped — you don't need to budget for everything.
+      </p>
+
+      <div className="document-table-wrap">
+        <table className="document-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Monthly budget</th>
+            </tr>
+          </thead>
+          <tbody>
+            {BUDGET_CATEGORIES.map((category) => (
+              <tr key={category}>
+                <td>{category}</td>
+                <td>
+                  <input
+                    className="row-edit-input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={monthlyAmounts[category] ?? ""}
+                    onChange={(e) =>
+                      setMonthlyAmounts((prev) => ({ ...prev, [category]: e.target.value }))
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
+
+      <h2 style={{ marginTop: 24 }}>Saved budgets</h2>
+      {loadingBudgets ? (
+        <p style={{ color: "#7a837f", fontSize: 13 }}>Loading…</p>
+      ) : budgets.length === 0 ? (
+        <div className="empty-state">No budgets saved yet.</div>
+      ) : (
+        <ul className="fin-reports-list__items">
+          {budgets.map((b) => (
+            <li key={b.id}>
+              <span className="fin-reports-list__item" style={{ cursor: "default" }}>
+                <span>Fiscal year {b.fiscal_year}</span>
+                <span>{b.line_count} categor{b.line_count === 1 ? "y" : "ies"}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 const EMPTY_FILTERS: Filters = {
@@ -1293,7 +1456,7 @@ const EMPTY_FILTERS: Filters = {
 
 export function FinancialPage() {
   const { user, getIdToken } = useAuth();
-  const [tab, setTab] = useState<"transactions" | "reports">("transactions");
+  const [tab, setTab] = useState<"transactions" | "budgets" | "reports">("transactions");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
