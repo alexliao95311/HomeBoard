@@ -99,12 +99,28 @@ class BudgetVsActualLine(BaseModel):
     budget_amount: float | None
     actual_amount: float
     variance: float | None
+    ytd_budget_amount: float | None
+    ytd_actual_amount: float
+    ytd_variance: float | None
+    annual_budget_amount: float | None
+
+
+class FundSection(BaseModel):
+    executive_summary: ExecutiveSummary
+    expenses_by_category: list[CategoryAmount]
+    income_by_category: list[CategoryAmount]
 
 
 class FinancialReportJson(BaseModel):
+    organization_name: str | None
     period_start: date
     period_end: date
+    fiscal_year: int
+    ytd_start: date
     executive_summary: ExecutiveSummary
+    ytd_summary: ExecutiveSummary
+    operating: FundSection
+    reserve: FundSection
     expenses_by_category: list[CategoryAmount]
     income_by_category: list[CategoryAmount]
     budget_vs_actual: list[BudgetVsActualLine]

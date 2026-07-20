@@ -292,12 +292,28 @@ export interface BudgetVsActualLine {
   budget_amount: number | null;
   actual_amount: number;
   variance: number | null;
+  ytd_budget_amount: number | null;
+  ytd_actual_amount: number;
+  ytd_variance: number | null;
+  annual_budget_amount: number | null;
+}
+
+export interface FundSection {
+  executive_summary: ExecutiveSummary;
+  expenses_by_category: CategoryAmount[];
+  income_by_category: CategoryAmount[];
 }
 
 export interface FinancialReportJson {
+  organization_name: string | null;
   period_start: string;
   period_end: string;
+  fiscal_year: number;
+  ytd_start: string;
   executive_summary: ExecutiveSummary;
+  ytd_summary: ExecutiveSummary;
+  operating: FundSection;
+  reserve: FundSection;
   expenses_by_category: CategoryAmount[];
   income_by_category: CategoryAmount[];
   budget_vs_actual: BudgetVsActualLine[];

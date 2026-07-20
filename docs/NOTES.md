@@ -14,8 +14,10 @@ are implemented. The financial module now covers transaction CSV import
 duplicate/invoice/transfer overlaps, and board-facing report generation with
 a `/financial` Reports tab (now with a Budgets tab too, for simple manual
 budget entry). Reconciliation now works incrementally across separate
-imports, not just within one batch. The current Alembic revision is
-`20260717_0007`, and all 51 backend tests pass.
+imports, not just within one batch. Reports now include a fiscal-year-aware
+Month/YTD/Annual-Budget comparison and Operating/Reserve fund sections,
+modeled on a real professional HOA financial report. The current Alembic
+revision is `20260717_0007`, and all 52 backend tests pass.
 
 ## Start the Project
 
@@ -480,11 +482,62 @@ To switch to real AI: set `USE_FAKE_AI=false` in `.env` and restart Docker.
   highlighted.
 - [ ] PDF export of a report (webpage version shipped first, PDF deferred).
 
+### 24. Report Structure Upgrade (Modeled on a Real Professional HOA Report)
+
+Compared the app's report against an actual professionally-prepared monthly
+HOA financial package ("The Cottages at DRV — Preliminary Financial Report")
+to decide what a board-facing report should really include.
+
+- [x] Added a cover-page-style header to `report_json`: `organization_name`,
+  `fiscal_year`, `ytd_start` (fiscal year runs Oct 1 → Sep 30, labeled by the
+  calendar year it ends in — matches the real report's convention).
+- [x] Added `ytd_summary` — income/expenses/net income from fiscal-year-start
+  through `period_end`, alongside the existing single-period
+  `executive_summary`.
+- [x] Added `operating` / `reserve` sections (`FundSection`: executive
+  summary + expenses/income by category), splitting the report the same way
+  the real one has two separate Operating and Reserve statements — uses the
+  `fund_type` column already populated by reconciled imports.
+- [x] Extended `budget_vs_actual` with `ytd_budget_amount`,
+  `ytd_actual_amount`, `ytd_variance`, `annual_budget_amount` alongside the
+  existing month figures — mirrors the real report's Month/YTD/Annual-Budget
+  column layout. Frontend table now has grouped "This month" / "Year to
+  date" column headers plus an Annual Budget column, and highlights a row as
+  over-budget if either the month OR the YTD variance is negative.
+- [x] Added automatic notes: when transactions in the period are tagged
+  `transaction_type="transfer"` (internal transfers or same-account
+  reversals), the report now says how many and that they were excluded from
+  income/expenses — a lightweight stand-in for the real report's Journal
+  Voucher / adjustment log, using data the reconciliation engine already
+  produces rather than a new audit-log table.
+- [x] Added a "View transactions for this period" link from a generated
+  report straight to the Transactions tab, pre-filtered to that date range —
+  a cheap proxy for the real report's General Ledger / transaction-detail
+  appendix, reusing the existing client-side date filter instead of
+  embedding a full transaction list in `report_json`.
+- [x] 1 new test (`test_report_includes_fiscal_year_ytd_and_fund_split`)
+  covering fiscal year/YTD math, the Operating/Reserve split, and the
+  transfer-exclusion note, plus fixed UI alignment issues found on the
+  Budgets/Reports tabs while building this (rigid 4-column form grid reused
+  for a 2-field form left dead grid tracks; numeric table columns were never
+  right-aligned; the summary card grid had a phantom empty 4th slot).
+- [ ] **Deliberately not attempted** — would need substantial new data
+  modeling, not a report tweak: full Balance Sheet (assets/liabilities/
+  equity — we only track cash transactions), AR Aging / delinquency (needs
+  per-unit owner/assessment records — no such model exists), Check Register
+  (needs a real check-number field), and a coded General Ledger (we use
+  free-text categories, not a chart of accounts). Tracked as a future
+  initiative, not out of scope permanently — see Next Work.
+
 ## Next Work
 
 1. Decide when to move document binaries from local storage to Firebase Cloud
    Storage.
 2. Add PDF export for financial reports.
+3. Future initiative: full Balance Sheet, AR Aging/delinquency tracking,
+   Check Register, and a coded General Ledger — each requires new data
+   models (units/owners/assessments, chart of accounts, check numbers) well
+   beyond the current transaction-and-budget schema.
 
 ---
 

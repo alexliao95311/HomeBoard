@@ -1032,7 +1032,11 @@ function TransactionTable({
 
 // ── reports panel ──────────────────────────────────────────────────────────────
 
-function ReportsPanel() {
+function ReportsPanel({
+  onViewTransactions,
+}: {
+  onViewTransactions: (dateFrom: string, dateTo: string) => void;
+}) {
   const { getIdToken } = useAuth();
   const [reports, setReports] = useState<FinancialReportListItem[]>([]);
   const [loadingReports, setLoadingReports] = useState(true);
@@ -1193,6 +1197,15 @@ function ReportsPanel() {
             </div>
           ) : (
             <>
+              <div className="fin-report-cover">
+                <p className="fin-report-cover__org">
+                  {reportJson.organization_name ?? "Financial Report"}
+                </p>
+                <p className="fin-report-cover__period">
+                  {reportJson.period_start} → {reportJson.period_end} · Fiscal Year {reportJson.fiscal_year}
+                </p>
+              </div>
+
               <div className="fin-summary">
                 <div className="fin-stat fin-stat--income">
                   <span className="fin-stat__label">Income</span>
@@ -1208,6 +1221,73 @@ function ReportsPanel() {
                     {reportJson.executive_summary.net_income >= 0 ? "+" : "−"}
                     {fmtUsd(reportJson.executive_summary.net_income)}
                   </span>
+                </div>
+                <div className={`fin-stat ${reportJson.ending_cash_estimate >= 0 ? "fin-stat--net-pos" : "fin-stat--net-neg"}`}>
+                  <span className="fin-stat__label">Ending cash</span>
+                  <span className="fin-stat__value">
+                    {reportJson.ending_cash_estimate >= 0 ? "+" : "−"}
+                    {fmtUsd(reportJson.ending_cash_estimate)}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                className="table-action"
+                type="button"
+                onClick={() => onViewTransactions(reportJson.period_start, reportJson.period_end)}
+              >
+                View transactions for this period →
+              </button>
+
+              <h2>Year to date (since {reportJson.ytd_start})</h2>
+              <div className="fin-ytd-summary">
+                <div className="fin-stat fin-stat--income">
+                  <span className="fin-stat__label">Income</span>
+                  <span className="fin-stat__value">{fmtUsd(reportJson.ytd_summary.total_income)}</span>
+                </div>
+                <div className="fin-stat fin-stat--expense">
+                  <span className="fin-stat__label">Expenses</span>
+                  <span className="fin-stat__value">{fmtUsd(reportJson.ytd_summary.total_expenses)}</span>
+                </div>
+                <div className={`fin-stat ${reportJson.ytd_summary.net_income >= 0 ? "fin-stat--net-pos" : "fin-stat--net-neg"}`}>
+                  <span className="fin-stat__label">Net income</span>
+                  <span className="fin-stat__value">
+                    {reportJson.ytd_summary.net_income >= 0 ? "+" : "−"}
+                    {fmtUsd(reportJson.ytd_summary.net_income)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="fin-fund-sections">
+                <div className="fin-fund-section">
+                  <h3>Operating fund (this month)</h3>
+                  <div className="fin-fund-section__row">
+                    <span>Income</span>
+                    <span>{fmtUsd(reportJson.operating.executive_summary.total_income)}</span>
+                  </div>
+                  <div className="fin-fund-section__row">
+                    <span>Expenses</span>
+                    <span>{fmtUsd(reportJson.operating.executive_summary.total_expenses)}</span>
+                  </div>
+                  <div className="fin-fund-section__row">
+                    <span>Net income</span>
+                    <span>{fmtUsd(reportJson.operating.executive_summary.net_income)}</span>
+                  </div>
+                </div>
+                <div className="fin-fund-section">
+                  <h3>Reserve fund (this month)</h3>
+                  <div className="fin-fund-section__row">
+                    <span>Income</span>
+                    <span>{fmtUsd(reportJson.reserve.executive_summary.total_income)}</span>
+                  </div>
+                  <div className="fin-fund-section__row">
+                    <span>Expenses</span>
+                    <span>{fmtUsd(reportJson.reserve.executive_summary.total_expenses)}</span>
+                  </div>
+                  <div className="fin-fund-section__row">
+                    <span>Net income</span>
+                    <span>{fmtUsd(reportJson.reserve.executive_summary.net_income)}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1228,14 +1308,14 @@ function ReportsPanel() {
                     <thead>
                       <tr>
                         <th>Category</th>
-                        <th>Amount</th>
+                        <th className="num-col">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reportJson.expenses_by_category.map((row) => (
                         <tr key={row.category}>
                           <td>{row.category}</td>
-                          <td>{fmtUsd(row.amount)}</td>
+                          <td className="num-col">{fmtUsd(row.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1252,14 +1332,14 @@ function ReportsPanel() {
                     <thead>
                       <tr>
                         <th>Category</th>
-                        <th>Amount</th>
+                        <th className="num-col">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reportJson.income_by_category.map((row) => (
                         <tr key={row.category}>
                           <td>{row.category}</td>
-                          <td>{fmtUsd(row.amount)}</td>
+                          <td className="num-col">{fmtUsd(row.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1274,25 +1354,45 @@ function ReportsPanel() {
                     <table className="document-table">
                       <thead>
                         <tr>
-                          <th>Category</th>
-                          <th>Budget</th>
-                          <th>Actual</th>
-                          <th>Variance</th>
+                          <th rowSpan={2}>Category</th>
+                          <th colSpan={3} className="fin-table-group-header">This month</th>
+                          <th colSpan={3} className="fin-table-group-header">Year to date</th>
+                          <th rowSpan={2} className="num-col">Annual budget</th>
+                        </tr>
+                        <tr>
+                          <th className="num-col">Budget</th>
+                          <th className="num-col">Actual</th>
+                          <th className="num-col">Variance</th>
+                          <th className="num-col">Budget</th>
+                          <th className="num-col">Actual</th>
+                          <th className="num-col">Variance</th>
                         </tr>
                       </thead>
                       <tbody>
                         {reportJson.budget_vs_actual.map((row) => {
                           const overBudget = row.variance !== null && row.variance < 0;
+                          const ytdOverBudget = row.ytd_variance !== null && row.ytd_variance < 0;
                           return (
-                            <tr key={row.category} className={overBudget ? "fin-budget-row--over" : undefined}>
+                            <tr
+                              key={row.category}
+                              className={overBudget || ytdOverBudget ? "fin-budget-row--over" : undefined}
+                            >
                               <td>{row.category}</td>
-                              <td>{row.budget_amount === null ? "—" : fmtUsd(row.budget_amount)}</td>
-                              <td>{fmtUsd(row.actual_amount)}</td>
-                              <td>
+                              <td className="num-col">{row.budget_amount === null ? "—" : fmtUsd(row.budget_amount)}</td>
+                              <td className="num-col">{fmtUsd(row.actual_amount)}</td>
+                              <td className="num-col">
                                 {row.variance === null
                                   ? "—"
                                   : `${overBudget ? "Over by " : "Under by "}${fmtUsd(row.variance)}`}
                               </td>
+                              <td className="num-col">{row.ytd_budget_amount === null ? "—" : fmtUsd(row.ytd_budget_amount)}</td>
+                              <td className="num-col">{fmtUsd(row.ytd_actual_amount)}</td>
+                              <td className="num-col">
+                                {row.ytd_variance === null
+                                  ? "—"
+                                  : `${ytdOverBudget ? "Over by " : "Under by "}${fmtUsd(row.ytd_variance)}`}
+                              </td>
+                              <td className="num-col">{row.annual_budget_amount === null ? "—" : fmtUsd(row.annual_budget_amount)}</td>
                             </tr>
                           );
                         })}
@@ -1370,7 +1470,7 @@ function BudgetsPanel() {
 
   return (
     <div className="fin-reports">
-      <form className="fin-import-form" onSubmit={(e) => void handleCreate(e)} style={{ flexWrap: "wrap" }}>
+      <form className="fin-budget-form" onSubmit={(e) => void handleCreate(e)}>
         <label>
           Fiscal year
           <input
@@ -1380,7 +1480,7 @@ function BudgetsPanel() {
             required
           />
         </label>
-        <button className="table-action" type="submit" disabled={creating} style={{ alignSelf: "end" }}>
+        <button className="button button--primary fin-report-form__submit" type="submit" disabled={creating}>
           {creating ? "Saving…" : "Save budget"}
         </button>
       </form>
@@ -1395,16 +1495,17 @@ function BudgetsPanel() {
           <thead>
             <tr>
               <th>Category</th>
-              <th>Monthly budget</th>
+              <th className="num-col">Monthly budget</th>
             </tr>
           </thead>
           <tbody>
             {BUDGET_CATEGORIES.map((category) => (
               <tr key={category}>
                 <td>{category}</td>
-                <td>
+                <td className="num-col">
                   <input
                     className="row-edit-input"
+                    style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}
                     type="number"
                     step="0.01"
                     min="0"
@@ -1423,7 +1524,7 @@ function BudgetsPanel() {
 
       {error && <p className="document-error" style={{ marginTop: 12 }}>{error}</p>}
 
-      <h2 style={{ marginTop: 24 }}>Saved budgets</h2>
+      <h2>Saved budgets</h2>
       {loadingBudgets ? (
         <p style={{ color: "#7a837f", fontSize: 13 }}>Loading…</p>
       ) : budgets.length === 0 ? (
@@ -1431,11 +1532,9 @@ function BudgetsPanel() {
       ) : (
         <ul className="fin-reports-list__items">
           {budgets.map((b) => (
-            <li key={b.id}>
-              <span className="fin-reports-list__item" style={{ cursor: "default" }}>
-                <span>Fiscal year {b.fiscal_year}</span>
-                <span>{b.line_count} categor{b.line_count === 1 ? "y" : "ies"}</span>
-              </span>
+            <li key={b.id} className="fin-budget-list__item">
+              <span>Fiscal year {b.fiscal_year}</span>
+              <span>{b.line_count} categor{b.line_count === 1 ? "y" : "ies"}</span>
             </li>
           ))}
         </ul>
@@ -1679,7 +1778,12 @@ export function FinancialPage() {
       </div>
 
       {tab === "reports" ? (
-        <ReportsPanel />
+        <ReportsPanel
+          onViewTransactions={(dateFrom, dateTo) => {
+            setFilters({ ...EMPTY_FILTERS, dateFrom, dateTo });
+            setTab("transactions");
+          }}
+        />
       ) : (
         <>
           {!loadingDocs && (
